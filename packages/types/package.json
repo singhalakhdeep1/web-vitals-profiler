@@ -1,0 +1,22 @@
+{
+  "name": "@wvp/types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/chrome": "^0.0.313",
+    "eslint": "^9.39.1",
+    "typescript": "5.9.2",
+    "vitest": "^3.1.1"
+  }
+}

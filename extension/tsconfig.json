@@ -1,0 +1,24 @@
+{
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": ["chrome", "vite/client"]
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx",
+    "../apps/popup/**/*.ts",
+    "../apps/popup/**/*.tsx",
+    "../apps/devtools/**/*.ts",
+    "../apps/devtools/**/*.tsx",
+    "../apps/side-panel/**/*.ts",
+    "../apps/side-panel/**/*.tsx",
+    "../apps/options/**/*.ts",
+    "../apps/options/**/*.tsx"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

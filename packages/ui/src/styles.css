@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-wvp-primary: #2563eb;
+  --color-wvp-surface: #f8fafc;
+  --color-wvp-border: #e2e8f0;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-white font-sans text-slate-900 antialiased;
+  }
+}
