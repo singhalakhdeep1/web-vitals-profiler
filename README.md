@@ -4,7 +4,6 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Chrome Extension](https://img.shields.io/badge/Manifest-V3-4285F4?logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
 A production-grade **Manifest V3 Chrome extension** for profiling **Core Web Vitals** in real time — built as a **Turborepo monorepo** with separate React apps for popup, DevTools panel, side panel, and options page.
 
