@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface LighthouseReport {
   id: string;
@@ -22,11 +23,22 @@ interface LighthouseIntegrationProps {
   userId: string;
 }
 
+const CATEGORY_OPTIONS: [string, string][] = [
+  ['performance', 'Performance'],
+  ['accessibility', 'Accessibility'],
+  ['best-practices', 'Best Practices'],
+  ['seo', 'SEO'],
+  ['pwa', 'PWA'],
+];
+
 export function LighthouseIntegration({ userId }: LighthouseIntegrationProps) {
   const [reports, setReports] = useState<LighthouseReport[]>([]);
   const [urlInput, setUrlInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [selectedReport, setSelectedReport] = useState<LighthouseReport | null>(null);
+  const [categories, setCategories] = useState<string[]>(['performance', 'accessibility', 'best-practices', 'seo']);
+  const [strategy, setStrategy] = useState<'desktop' | 'mobile' | 'both'>('mobile');
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -35,7 +47,7 @@ export function LighthouseIntegration({ userId }: LighthouseIntegrationProps) {
 
   const fetchReports = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/lighthouse-reports`);
+      const response = await apiFetch(`/api/users/${userId}/lighthouse-reports`);
       if (response.ok) {
         const data = await response.json();
         setReports(data);
@@ -52,18 +64,21 @@ export function LighthouseIntegration({ userId }: LighthouseIntegrationProps) {
 
     setIsRunning(true);
     try {
-      const response = await fetch('/api/lighthouse/run', {
+      const response = await apiFetch('/api/lighthouse/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, url: urlInput }),
+        body: JSON.stringify({ userId, url: urlInput, strategy, categories }),
       });
 
+      const data = await response.json();
       if (response.ok) {
-        const report = await response.json();
-        setReports(prev => [report, ...prev]);
-        setSelectedReport(report);
+        // "both" answers with two reports
+        const list: LighthouseReport[] = Array.isArray(data) ? data : [data];
+        setReports(prev => [...list, ...prev]);
+        setSelectedReport(list[0] ?? null);
         setUrlInput('');
-      }
+        setError(null);
+      } else setError(data.error ?? 'Lighthouse run failed');
     } catch (error) {
       console.error('Failed to run Lighthouse:', error);
     } finally {
@@ -107,6 +122,7 @@ export function LighthouseIntegration({ userId }: LighthouseIntegrationProps) {
           >
             {isRunning ? 'Running...' : 'Run Audit'}
           </button>
+          {error && <p className="mt-2 text-sm text-red-600" role="alert">{error}</p>}
         </div>
       </div>
 
@@ -238,32 +254,23 @@ export function LighthouseIntegration({ userId }: LighthouseIntegrationProps) {
       <div className="border rounded-lg p-4">
         <h3 className="font-semibold mb-3">Audit Settings</h3>
         <div className="space-y-3">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" defaultChecked />
-            <span className="text-sm">Performance</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" defaultChecked />
-            <span className="text-sm">Accessibility</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" defaultChecked />
-            <span className="text-sm">Best Practices</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" defaultChecked />
-            <span className="text-sm">SEO</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" />
-            <span className="text-sm">PWA</span>
-          </label>
+          {CATEGORY_OPTIONS.map(([id, label]) => (
+            <label key={id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={id === 'performance' || categories.includes(id)}
+                disabled={id === 'performance'}
+                onChange={(e) => setCategories(e.target.checked ? [...categories, id] : categories.filter((c) => c !== id))}
+              />
+              <span className="text-sm">{label}</span>
+            </label>
+          ))}
           <div>
             <label className="block text-sm font-medium mb-2">Device</label>
-            <select className="w-full border rounded px-3 py-2">
-              <option>Desktop</option>
-              <option>Mobile</option>
-              <option>Both</option>
+            <select className="w-full border rounded px-3 py-2" value={strategy} onChange={(e) => setStrategy(e.target.value as typeof strategy)} aria-label="Device">
+              <option value="desktop">Desktop</option>
+              <option value="mobile">Mobile</option>
+              <option value="both">Both</option>
             </select>
           </div>
         </div>

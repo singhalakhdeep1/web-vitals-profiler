@@ -12,6 +12,8 @@ export interface VitalMetric {
   timestamp: number;
   url: string;
   tabId?: number;
+  /** Effective connection type when measured (navigator.connection), e.g. "4g". */
+  connection?: string;
 }
 
 /** Latest vitals snapshot for a tab. */
@@ -58,7 +60,11 @@ export type MessageType =
   | "EXPORT_REPORT"
   | "VITALS_STREAM"
   | "GET_SESSIONS"
-  | "CLEAR_DATA";
+  | "CLEAR_DATA"
+  | "SYNC_STATUS"
+  | "SYNC_NOW"
+  | "PAGE_RESOURCES"
+  | "GET_PAGE_ANALYSIS";
 
 /** Base message envelope sent between extension contexts. */
 export interface ExtensionMessage<T = unknown> {
@@ -103,4 +109,32 @@ export interface VitalsStreamMessage {
   type: "vitals" | "timeline" | "connected";
   snapshot?: VitalsSnapshot;
   metric?: VitalMetric;
+}
+
+/** Sync state shown in the options page and the popup. */
+export interface SyncStatus {
+  enabled: boolean;
+  signedIn: boolean;
+  user?: { id: string; name: string; email: string };
+  apiUrl: string;
+  queued: number;
+  lastSyncAt?: number;
+  lastError?: string;
+}
+
+/** Resource timing and navigation summary collected in the page (input for the speed analysis). */
+export interface PageResources {
+  url: string;
+  resources: {
+    name: string;
+    initiatorType: string;
+    startTime: number;
+    duration: number;
+    transferSize: number;
+    encodedBodySize: number;
+    decodedBodySize: number;
+    renderBlockingStatus?: string;
+  }[];
+  navigation: { ttfb: number; domContentLoaded: number; loadEvent: number; lcp?: number; lcpResource?: string };
+  collectedAt: number;
 }

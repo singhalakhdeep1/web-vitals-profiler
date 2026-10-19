@@ -1,0 +1,28 @@
+{
+  "name": "@wvp/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Web Vitals Profiler sync API: accounts, vitals ingest, budgets, Lighthouse, scoring, alerts, team dashboards, A/B tests, badges, reports",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wvp/core": "workspace:*",
+    "@wvp/firebase": "workspace:*",
+    "@wvp/pagespeed": "workspace:*",
+    "@wvp/services": "workspace:*",
+    "@wvp/vercel": "workspace:*",
+    "@wvp/wasm": "workspace:*",
+    "nodemailer": "^6.9.16",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "@types/nodemailer": "^6.4.17",
+    "typescript": "5.9.2"
+  }
+}

@@ -1,16 +1,16 @@
 # Web Vitals Profiler - HLD/LLD Implementation
 
 ## Overview
-This document provides comprehensive documentation for HLD/LLD patterns implemented in the Web Vitals Profiler application (TypeScript/Next.js).
+This document provides comprehensive documentation for HLD/LLD patterns implemented in the Web Vitals Profiler application (TypeScript: browser extension + sync API). The infrastructure services run in the sync API (`apps/api`); every topic below is implemented and was verified end to end against Redis and the Firestore emulator (see README.md).
 
 ## Implemented Topics
 
 ### LLD Topics (Low-Level Design)
 
 #### 1. Distributed Caching
-**Location:** `packages/services/cache/cache.service.ts`
+**Location:** `packages/services/cache/cache.service.ts` (used by `apps/api`)
 
-**Description:** Implements distributed caching with Redis for web performance data.
+**Description:** Implements distributed caching with Redis for web performance data (in-process fallback without Redis). Used for per-user stats and trends (invalidated when new samples arrive), PageSpeed results (10 min), badge SVGs (5 min) and alert cool-downs.
 
 **Key Features:**
 - Get/set/delete operations
@@ -20,17 +20,17 @@ This document provides comprehensive documentation for HLD/LLD patterns implemen
 
 **Usage Example:**
 ```typescript
-import { CacheService } from './packages/services/cache/cache.service';
+import { CacheService } from '@wvp/services';
 
-const cache = new CacheService();
+const cache = new CacheService('wvp');
 const cached = await cache.get('vitals:page:123');
 await cache.set('vitals:page:123', JSON.stringify(vitals), 3600);
 ```
 
 #### 2. API Rate Limiting
-**Location:** `packages/services/rate-limiting/rate-limiting.service.ts`
+**Location:** `packages/services/rate-limiting/rate-limiting.service.ts` (used by `apps/api`)
 
-**Description:** Implements token bucket algorithm for API rate limiting.
+**Description:** Implements token bucket algorithm for API rate limiting. The refill-and-take step is one Lua script on Redis (atomic across API instances). Applied to sign-in, sign-up, vitals ingest, Lighthouse runs and every authenticated request.
 
 **Key Features:**
 - Token bucket algorithm
@@ -40,16 +40,17 @@ await cache.set('vitals:page:123', JSON.stringify(vitals), 3600);
 
 **Usage Example:**
 ```typescript
-import { RateLimitingService } from './packages/services/rate-limiting/rate-limiting.service';
+import { RateLimitingService, perWindow } from '@wvp/services';
 
 const rateLimiting = new RateLimitingService();
+const ingest = perWindow('ingest', 240, 60); // 240 uploads per minute
 const allowed = await rateLimiting.isAllowed(`page:${pageId}`, 1);
 ```
 
 #### 3. Structured Logging
-**Location:** `packages/services/structured-logging/structured-logging.service.ts`
+**Location:** `packages/services/structured-logging/structured-logging.service.ts` (used by `apps/api`)
 
-**Description:** Implements structured logging with correlation IDs and context.
+**Description:** Implements structured logging with correlation IDs and context: one JSON line per event, the request's correlation id (`X-Request-Id`) and user kept in AsyncLocalStorage, audit events for sign-ins, invites, alerts and Lighthouse runs.
 
 **Key Features:**
 - Structured log entries
@@ -59,9 +60,8 @@ const allowed = await rateLimiting.isAllowed(`page:${pageId}`, 1);
 
 **Usage Example:**
 ```typescript
-import { StructuredLoggingService } from './packages/services/structured-logging/structured-logging.service';
+import { logger as logging } from '@wvp/services';
 
-const logging = new StructuredLoggingService();
 logging.logAuditEvent('VitalsCollected', 'Web vitals collected', { pageId, userId });
 ```
 
@@ -70,27 +70,27 @@ logging.logAuditEvent('VitalsCollected', 'Web vitals collected', { pageId, userI
 #### 1. Performance Packages
 **Location:** `packages/performance/` (Already exists)
 
-**Description:** Performance measurement and optimization packages.
+**Description:** Performance measurement (`packages/performance`: web-vitals + TBT observer) and optimization analysis (`packages/core`: resource and critical-path analysis, scoring, regressions, A/B statistics, analytics, reports; percentiles in WebAssembly from `packages/wasm`).
 
 #### 2. Storage Packages
 **Location:** `packages/storage/` (Already exists)
 
-**Description:** Storage solutions for performance data.
+**Description:** Storage solutions for performance data: IndexedDB in the extension (`packages/storage`, Dexie) and Firestore or in-memory on the server (`packages/firebase`).
 
 #### 3. UI Components
 **Location:** `packages/ui/` (Already exists)
 
-**Description:** UI components for visualization.
+**Description:** UI components for visualization (`packages/ui`, and the side-panel views in `apps/side-panel`).
 
 #### 4. Hooks
 **Location:** `packages/hooks/` (Already exists)
 
-**Description:** React hooks for performance tracking.
+**Description:** React hooks for performance tracking (`packages/hooks`).
 
 #### 5. Service Worker
 **Location:** `packages/service-worker/` (Already exists)
 
-**Description:** Service worker for offline capabilities.
+**Description:** Service worker for offline capabilities: background sync of measured vitals through a persistent queue in `chrome.storage`, batched uploads, exponential back-off and `chrome.alarms` retries (used by `extension/background/service-worker.ts`).
 
 ## Architecture
 
@@ -135,8 +135,9 @@ RATE_LIMIT_BUCKET_CAPACITY=100
 RATE_LIMIT_REFILL_RATE=1
 
 # Analytics
-FIREBASE_API_KEY=your-firebase-api-key
-NEXT_PUBLIC_APP_URL=your-app-url
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_SERVICE_ACCOUNT={...service account JSON...}
+PUBLIC_URL=https://vitals.example.com
 ```
 
 ## Summary

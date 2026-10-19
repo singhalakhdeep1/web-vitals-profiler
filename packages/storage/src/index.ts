@@ -29,7 +29,7 @@ export async function getMetrics(filters?: {
   to?: number;
   limit?: number;
 }): Promise<VitalMetric[]> {
-  let collection = db.metrics.orderBy("timestamp").reverse();
+  const collection = db.metrics.orderBy("timestamp").reverse();
 
   const all = await collection.toArray();
 

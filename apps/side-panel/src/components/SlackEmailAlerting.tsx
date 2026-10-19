@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface AlertChannel {
   id: string;
@@ -15,7 +16,7 @@ interface AlertChannel {
 interface AlertRule {
   id: string;
   name: string;
-  metric: 'LCP' | 'FID' | 'CLS' | 'FCP' | 'TTFB';
+  metric: 'LCP' | 'INP' | 'CLS' | 'FCP' | 'TTFB';
   condition: 'above' | 'below';
   threshold: number;
   channels: string[];
@@ -50,6 +51,14 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
     channel: '',
     recipients: '',
   });
+  const [newRule, setNewRule] = useState({
+    name: '',
+    metric: 'LCP' as AlertRule['metric'],
+    condition: 'above' as AlertRule['condition'],
+    threshold: 2500,
+    channels: [] as string[],
+  });
+  const [testResult, setTestResult] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -59,9 +68,9 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
   const fetchAlertData = async () => {
     try {
       const [channelsRes, rulesRes, historyRes] = await Promise.all([
-        fetch(`/api/users/${userId}/alert-channels`),
-        fetch(`/api/users/${userId}/alert-rules`),
-        fetch(`/api/users/${userId}/alert-history`),
+        apiFetch(`/api/users/${userId}/alert-channels`),
+        apiFetch(`/api/users/${userId}/alert-rules`),
+        apiFetch(`/api/users/${userId}/alert-history`),
       ]);
 
       if (channelsRes.ok) setChannels(await channelsRes.json());
@@ -76,7 +85,7 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
 
   const addChannel = async () => {
     try {
-      const response = await fetch('/api/alert-channels', {
+      const response = await apiFetch('/api/alert-channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -102,16 +111,17 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
 
   const addRule = async () => {
     try {
-      const response = await fetch('/api/alert-rules', {
+      const response = await apiFetch('/api/alert-rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          name: newChannel.name,
-          metric: 'LCP',
-          type: newChannel.type,
-          threshold: 2500,
-          channels: channels.filter(c => c.enabled).map(c => c.id),
+          name: newRule.name,
+          metric: newRule.metric,
+          condition: newRule.condition,
+          threshold: newRule.threshold,
+          // no channel picked: notify every enabled channel
+          channels: newRule.channels.length ? newRule.channels : channels.filter(c => c.enabled).map(c => c.id),
         }),
       });
 
@@ -119,6 +129,7 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
         const rule = await response.json();
         setRules(prev => [...prev, rule]);
         setIsAddingRule(false);
+        setNewRule({ name: '', metric: 'LCP', condition: 'above', threshold: 2500, channels: [] });
       }
     } catch (error) {
       console.error('Failed to add rule:', error);
@@ -127,7 +138,7 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
 
   const toggleChannel = async (id: string) => {
     try {
-      const response = await fetch(`/api/alert-channels/${id}/toggle`, {
+      const response = await apiFetch(`/api/alert-channels/${id}/toggle`, {
         method: 'POST',
       });
 
@@ -143,7 +154,7 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
 
   const toggleRule = async (id: string) => {
     try {
-      const response = await fetch(`/api/alert-rules/${id}/toggle`, {
+      const response = await apiFetch(`/api/alert-rules/${id}/toggle`, {
         method: 'POST',
       });
 
@@ -155,6 +166,18 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
     } catch (error) {
       console.error('Failed to toggle rule:', error);
     }
+  };
+
+  /** Sends a test message through every enabled channel. */
+  const sendTestAlert = async () => {
+    const enabled = channels.filter(c => c.enabled);
+    if (!enabled.length) return setTestResult('Add and enable a channel first');
+    let sent = 0;
+    for (const c of enabled) {
+      const res = await apiFetch(`/api/alert-channels/${c.id}/test`, { method: 'POST' }).catch(() => null);
+      if (res?.ok) sent++;
+    }
+    setTestResult(`${sent} of ${enabled.length} channel${enabled.length > 1 ? 's' : ''} received the test alert`);
   };
 
   if (isLoading) return <div>Loading alert configuration...</div>;
@@ -181,7 +204,7 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
               <label className="block text-sm font-medium mb-1">Type</label>
               <select
                 value={newChannel.type}
-                onChange={(e) => setNewChannel({ ...newChannel, type: e.target.value as any })}
+                onChange={(e) => setNewChannel({ ...newChannel, type: e.target.value as AlertChannel['type'] })}
                 className="w-full border rounded px-3 py-2"
               >
                 <option value="slack">Slack</option>
@@ -278,6 +301,38 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
           </button>
         </div>
 
+        {isAddingRule && (
+          <div className="space-y-2 mb-3 p-3 bg-gray-50 rounded" data-testid="rule-form">
+            <input
+              type="text"
+              value={newRule.name}
+              onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
+              placeholder="e.g., Slow LCP on checkout"
+              className="w-full px-3 py-2 border rounded text-sm"
+            />
+            <div className="flex gap-2">
+              <select value={newRule.metric} onChange={(e) => setNewRule({ ...newRule, metric: e.target.value as AlertRule['metric'] })} className="px-2 py-2 border rounded text-sm" aria-label="Metric">
+                {['LCP', 'INP', 'CLS', 'FCP', 'TTFB'].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select value={newRule.condition} onChange={(e) => setNewRule({ ...newRule, condition: e.target.value as AlertRule['condition'] })} className="px-2 py-2 border rounded text-sm" aria-label="Condition">
+                <option value="above">above</option>
+                <option value="below">below</option>
+              </select>
+              <input type="number" step="any" value={newRule.threshold} onChange={(e) => setNewRule({ ...newRule, threshold: Number(e.target.value) })} className="w-28 px-2 py-2 border rounded text-sm" aria-label="Threshold" />
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm">
+              {channels.map((c) => (
+                <label key={c.id} className="flex items-center gap-1">
+                  <input type="checkbox" checked={newRule.channels.includes(c.id)} onChange={(e) => setNewRule({ ...newRule, channels: e.target.checked ? [...newRule.channels, c.id] : newRule.channels.filter((id) => id !== c.id) })} />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">Checked against the 75th percentile of each upload; one notification per rule every 15 minutes at most.</p>
+            <button onClick={addRule} disabled={!newRule.name} className="w-full px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300">Create Rule</button>
+          </div>
+        )}
+
         <div className="space-y-2">
           {rules.map((rule) => (
             <div key={rule.id} className="flex items-center justify-between p-3 border rounded">
@@ -328,7 +383,8 @@ export function SlackEmailAlerting({ userId }: SlackEmailAlertingProps) {
       {/* Test Alert */}
       <div className="border rounded-lg p-4">
         <h3 className="font-semibold mb-3">Test Alert</h3>
-        <button className="px-4 py-2 bg-blue-500 text-white rounded text-sm">
+        {testResult && <p className="mb-2 text-sm text-gray-600" role="status">{testResult}</p>}
+        <button onClick={() => void sendTestAlert()} className="px-4 py-2 bg-blue-500 text-white rounded text-sm">
           Send Test Alert
         </button>
       </div>

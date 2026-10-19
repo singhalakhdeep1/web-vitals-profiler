@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface TeamMember {
   id: string;
@@ -13,6 +14,8 @@ interface Dashboard {
   name: string;
   description: string;
   isPublic: boolean;
+  /** Pages whose field data the dashboard shows. */
+  urls?: string[];
   createdAt: Date;
   members: TeamMember[];
 }
@@ -32,6 +35,40 @@ export function TeamDashboards({ userId }: TeamDashboardsProps) {
     isPublic: false,
   });
   const [inviteEmail, setInviteEmail] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [settings, setSettings] = useState({ urls: '', isPublic: false });
+  const [summary, setSummary] = useState<{ pages: { url: string; samples: number; rating: string | null; metrics: Record<string, { p75: number; rating: string }> }[] } | null>(null);
+
+  useEffect(() => {
+    if (!selectedDashboard) return;
+    setSummary(null);
+    void apiFetch(`/api/team-dashboards/${selectedDashboard.id}/summary`).then(async (r) => r.ok && setSummary(await r.json()));
+  }, [selectedDashboard?.id, selectedDashboard?.urls?.join(',')]);
+
+  const saveSettings = async () => {
+    if (!selectedDashboard) return;
+    const urls = settings.urls.split(/\s+/).map((u) => u.trim()).filter(Boolean);
+    const response = await apiFetch(`/api/team-dashboards/${selectedDashboard.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls, isPublic: settings.isPublic }),
+    });
+    if (response.ok) {
+      const updated = await response.json();
+      setSelectedDashboard(updated);
+      setDashboards(prev => prev.map(d => (d.id === updated.id ? updated : d)));
+      setIsEditing(false);
+    }
+  };
+
+  const deleteDashboard = async () => {
+    if (!selectedDashboard || !confirm(`Delete the dashboard "${selectedDashboard.name}"?`)) return;
+    const response = await apiFetch(`/api/team-dashboards/${selectedDashboard.id}`, { method: 'DELETE' });
+    if (response.ok) {
+      setDashboards(prev => prev.filter(d => d.id !== selectedDashboard.id));
+      setSelectedDashboard(null);
+    }
+  };
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,7 +77,7 @@ export function TeamDashboards({ userId }: TeamDashboardsProps) {
 
   const fetchDashboards = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/team-dashboards`);
+      const response = await apiFetch(`/api/users/${userId}/team-dashboards`);
       if (response.ok) {
         const data = await response.json();
         setDashboards(data);
@@ -55,7 +92,7 @@ export function TeamDashboards({ userId }: TeamDashboardsProps) {
 
   const createDashboard = async () => {
     try {
-      const response = await fetch('/api/team-dashboards', {
+      const response = await apiFetch('/api/team-dashboards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, ...newDashboard }),
@@ -77,7 +114,7 @@ export function TeamDashboards({ userId }: TeamDashboardsProps) {
     if (!selectedDashboard || !inviteEmail) return;
 
     try {
-      const response = await fetch(`/api/team-dashboards/${selectedDashboard.id}/invite`, {
+      const response = await apiFetch(`/api/team-dashboards/${selectedDashboard.id}/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail, role: 'member' }),
@@ -101,7 +138,7 @@ export function TeamDashboards({ userId }: TeamDashboardsProps) {
     if (!selectedDashboard) return;
 
     try {
-      const response = await fetch(`/api/team-dashboards/${selectedDashboard.id}/members/${memberId}`, {
+      const response = await apiFetch(`/api/team-dashboards/${selectedDashboard.id}/members/${memberId}`, {
         method: 'DELETE',
       });
 
@@ -217,9 +254,56 @@ export function TeamDashboards({ userId }: TeamDashboardsProps) {
               </p>
             </div>
             <div className="flex gap-2">
-              <button className="px-3 py-1 border rounded text-sm">Settings</button>
-              <button className="px-3 py-1 border rounded text-sm text-red-600">Delete</button>
+              <button
+                onClick={() => {
+                  setSettings({ urls: (selectedDashboard.urls ?? []).join('\n'), isPublic: selectedDashboard.isPublic });
+                  setIsEditing(!isEditing);
+                }}
+                className="px-3 py-1 border rounded text-sm"
+              >
+                Settings
+              </button>
+              <button onClick={() => void deleteDashboard()} className="px-3 py-1 border rounded text-sm text-red-600">Delete</button>
             </div>
+          </div>
+
+          {isEditing && (
+            <div className="mb-4 space-y-2 rounded bg-gray-50 p-3" data-testid="dashboard-settings">
+              <label className="block text-sm font-medium">
+                Pages (one URL per line)
+                <textarea value={settings.urls} onChange={(e) => setSettings({ ...settings, urls: e.target.value })} rows={3} className="mt-1 w-full rounded border px-2 py-1 font-mono text-xs" />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={settings.isPublic} onChange={(e) => setSettings({ ...settings, isPublic: e.target.checked })} />
+                Public (read-only link without sign-in)
+              </label>
+              <button onClick={() => void saveSettings()} className="px-3 py-1 bg-blue-500 text-white rounded text-sm">Save settings</button>
+            </div>
+          )}
+
+          {/* Field data of the dashboard's pages, from every member's browser */}
+          <div className="mb-4" data-testid="dashboard-pages">
+            <h4 className="mb-2 font-medium">Pages (last 7 days, p75)</h4>
+            {!selectedDashboard.urls?.length ? (
+              <p className="text-sm text-gray-500">Add the pages to watch under Settings.</p>
+            ) : !summary ? (
+              <p className="text-sm text-gray-500">Loading…</p>
+            ) : (
+              <div className="space-y-2">
+                {summary.pages.map((p) => (
+                  <div key={p.url} className="rounded border p-2 text-sm">
+                    <p className="truncate font-medium" title={p.url}>{p.url}</p>
+                    {p.samples === 0 ? (
+                      <p className="text-gray-500">No samples yet</p>
+                    ) : (
+                      <p className="text-gray-600">
+                        {Object.entries(p.metrics).map(([m, v]) => `${m} ${m === 'CLS' ? v.p75.toFixed(3) : Math.round(v.p75) + ' ms'}`).join(' · ')} · {p.samples} samples
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Team Members */}

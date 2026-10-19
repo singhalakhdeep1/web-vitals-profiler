@@ -13,7 +13,10 @@
     "@wvp/ui": "workspace:*",
     "@wvp/utils": "workspace:*",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@wvp/types": "workspace:*",
+    "@wvp/api-client": "workspace:*",
+    "@wvp/messaging": "workspace:*"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
@@ -21,6 +24,8 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "^9.39.1",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "@types/chrome": "^0.0.313",
+    "vite": "^6.2.3"
   }
 }

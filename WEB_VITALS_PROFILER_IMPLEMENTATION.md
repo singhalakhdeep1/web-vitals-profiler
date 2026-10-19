@@ -1,161 +1,87 @@
 # Web Vitals Profiler - Implementation
 
 ## Overview
-This document describes the browser extension and monitoring integrations added to Web Vitals Profiler.
+This document describes the browser targets and monitoring integrations of Web Vitals Profiler, as built. The
+extension is one Manifest V3 build; the server side is the sync API in `apps/api`.
 
 ## Technologies Added
 
 ### 1. Firefox Extension
-- Manifest v2 configuration
-- Background script for tab management
-- Content script injection
-- Message passing for vitals collection
-- Storage API for vitals persistence
+- Derived from the Chrome build by `extension/scripts/build-targets.mjs` into `extension/dist-firefox`
+- Manifest V3 for Firefox 128+ (`extension/manifest.firefox.json` holds the differences)
+- The background module runs as an event page (`background.scripts`), the side panel becomes a sidebar (`sidebar_action`)
+- Platform adapter: `extension/background/firefox.ts` (browser naming, setup)
+- Not tested here (Firefox is not installed on the build machine)
 
 ### 2. Safari Extension
-- Manifest v2 configuration
-- Background script (persistent: false)
-- Tab activation handling
-- Script injection
-- Storage and messaging
+- Derived into `extension/dist-safari` (`extension/manifest.safari.json`): no side panel, no DevTools panel
+- Packaged on macOS with `xcrun safari-web-extension-converter extension/dist-safari`
+- Platform adapter: `extension/background/safari.ts`
+- Not tested here (needs macOS)
 
 ### 3. Edge Extension
-- Manifest v3 configuration
-- Service worker background
-- Tab activation handling
-- Script injection
-- Web accessible resources
+- Same Manifest V3 package as Chrome in `extension/dist-edge` (`extension/manifest.edge.json`: minimum version 114)
+- Platform adapter: `extension/background/edge.ts` (Chromium: side panel behaviour, Edge / Chrome version naming)
+- Tested in Microsoft Edge: measurement, sync and every side-panel view
 
 ### 4. Lighthouse CI
-- CI configuration for multiple URLs
-- Desktop and mobile strategies
-- Performance assertions
-- Multiple runs for accuracy
-- Artifact upload
-- Public storage upload
+- Configuration in `packages/lighthouse-ci/lighthouserc.cjs` (pages from `LHCI_URLS`, Core Web Vitals budgets: LCP ≤ 2.5 s, CLS ≤ 0.1), loaded through the root `lighthouserc.cjs`
+- The workflow `.github/workflows/vitals.yml` still needs updating (see README "Known gaps")
 
 ### 5. PageSpeed Insights API
-- URL analysis (desktop/mobile)
-- Lighthouse result extraction
-- Core Web Vitals (LCP, FID, CLS, FCP, TBT)
-- Metrics aggregation
-- Opportunities detection
-- Score calculation
+- `packages/pagespeed/api.ts`: typed client (categories, desktop / mobile, timeout, errors)
+- Normalized result: category scores, lab metrics (FCP, LCP, TBT, CLS, Speed Index, TTI), the biggest opportunities,
+  CrUX field data (p75)
+- Used by the API for Lighthouse runs (`POST /api/lighthouse/run`, cached 10 minutes) and scoring
 
 ### 6. WASM
-- WASM module loading
-- CLS calculation
-- LCP calculation
-- FID calculation
-- Metrics processing
-- Metrics aggregation
-- Percentile calculation
+- `packages/wasm/src/vitals.wat`: heap sort, nearest-rank percentile, mean and sample variance over f64 arrays
+- Compiled by `packages/wasm/scripts/build-wasm.mjs` (wabt) and embedded as base64, so it loads synchronously in Node,
+  serverless functions and extension pages; plain JavaScript fallback
+- Used for every percentile in the API (stats, trends, budgets, badges, reports) and in `packages/core`
 
 ### 7. Service Workers
-- Cache management
-- Fetch interception
-- Vitals collection messaging
-- Background sync
-- Offline support
+- `packages/service-worker/index.ts`: background sync for the extension's service worker
+- Persistent upload queue in `chrome.storage.local` (offline support), batching, exponential back-off, serialized
+  writes, retries through `chrome.alarms`
 
 ### 8. Firebase
-- Firestore integration
-- Vitals storage
-- URL-based queries
-- Statistics calculation
-- Percentile computation
-- Analytics integration
+- `packages/firebase`: document store with a Firestore implementation (firebase-admin; emulator via
+  `FIRESTORE_EMULATOR_HOST`) and an in-memory one; `saveVitals`, `getVitalsByUrl`, `getVitalsStats`
+- `firebase.json`, `firestore.rules` (no client access), `firestore.indexes.json` (indexes for the API's queries)
+- Firebase Analytics (a web-page SDK) is not used: extensions cannot load it
 
-### 9. Vercel Edge
-- Edge runtime configuration
-- Vitals API endpoints
-- Stats API endpoints
-- Request handling
-- JSON responses
+### 9. Vercel
+- `packages/vercel/config.ts`: function adapter and configuration (Node.js runtime: Firestore and Redis need it)
+- `apps/api/api/index.ts` and `apps/api/vercel.json`: every request goes to the API handler
+- The same handler runs on Node (`apps/api/src/server.ts`, Dockerfile, docker-compose.yml)
 
 ### 10. GitHub Actions
-- Lighthouse CI workflow
-- Vitals collection job
-- Analysis job
-- Artifact management
-- Scheduled runs
-- PR and push triggers
+- `.github/workflows/ci.yml`: install, icons, lint, typecheck, unit tests, build; Playwright specs
+- `.github/workflows/vitals.yml`: Lighthouse CI and scheduled collection (to be updated)
 
-## Files Created
+## Files
 
-### Extensions
-- `extension/manifest.firefox.json` - Firefox manifest
-- `extension/manifest.safari.json` - Safari manifest
-- `extension/manifest.edge.json` - Edge manifest
-- `extension/background/firefox.ts` - Firefox background script
-- `extension/background/safari.ts` - Safari background script
-- `extension/background/edge.ts` - Edge service worker
+| Area | Files |
+|---|---|
+| Browser targets | `extension/manifest.ts`, `extension/manifest.{edge,firefox,safari}.json`, `extension/scripts/build-targets.mjs`, `extension/background/{edge,firefox,safari,platform}.ts` |
+| Lighthouse CI | `packages/lighthouse-ci/lighthouserc.cjs`, `lighthouserc.cjs`, `.github/workflows/vitals.yml` |
+| PageSpeed | `packages/pagespeed/api.ts` |
+| WASM | `packages/wasm/src/vitals.wat`, `packages/wasm/src/index.ts`, `packages/wasm/scripts/build-wasm.mjs` |
+| Service worker | `packages/service-worker/index.ts` |
+| Firebase | `packages/firebase/config.ts`, `packages/firebase/src/{store,firestore}.ts`, `firebase.json`, `firestore.rules`, `firestore.indexes.json` |
+| Vercel | `packages/vercel/config.ts`, `apps/api/api/index.ts`, `apps/api/vercel.json` |
 
-### Lighthouse CI
-- `packages/lighthouse-ci/config.ts` - Lighthouse CI configuration
+## Installation
 
-### PageSpeed
-- `packages/pagespeed/api.ts` - PageSpeed Insights API client
-
-### WASM
-- `packages/wasm/processor.ts` - WASM vitals processor
-
-### Service Worker
-- `packages/service-worker/index.ts` - Service worker
-
-### Firebase
-- `packages/firebase/config.ts` - Firebase configuration
-
-### Vercel
-- `packages/vercel/config.ts` - Vercel Edge handler
-
-### GitHub Actions
-- `.github/workflows/vitals.yml` - CI/CD workflow
-
-## Installation Required
-
-Add to `package.json`:
-```json
-{
-  "dependencies": {
-    "firebase": "^10.7.0",
-    "web-vitals": "^3.5.0"
-  },
-  "devDependencies": {
-    "@lhci/cli": "^0.13.0",
-    "lighthouse": "^11.4.0"
-  }
-}
-```
-
-Run:
-```bash
-npm install
-```
+Everything is declared in the workspace `package.json` files: `pnpm install`.
 
 ## Environment Variables
 
-```env
-# PageSpeed Insights
-PAGESPEED_API_KEY=your_api_key
-
-# Firebase
-FIREBASE_API_KEY=your_api_key
-FIREBASE_AUTH_DOMAIN=your_auth_domain
-FIREBASE_PROJECT_ID=your_project_id
-FIREBASE_STORAGE_BUCKET=your_storage_bucket
-FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-FIREBASE_APP_ID=your_app_id
-FIREBASE_MEASUREMENT_ID=your_measurement_id
-```
+See `.env.example`: `PAGESPEED_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT`,
+`FIRESTORE_EMULATOR_HOST`, `REDIS_URL`, `JWT_SECRET`, `SMTP_URL`.
 
 ## Notes
-- All code is written but packages are not installed (per user request)
-- Firefox, Safari, and Edge extensions for cross-browser support
-- Lighthouse CI for automated performance monitoring
-- PageSpeed Insights API for Google metrics
-- WASM for high-performance calculations
-- Service Workers for offline support
-- Firebase for data storage and analytics
-- Vercel Edge for global edge computing
-- GitHub Actions for CI/CD automation
+- The API was verified with in-memory storage and with the Firestore emulator + Redis (91 checks each); the extension
+  in Edge against the real API (26 checks)
+- Firefox, Safari, a real Firebase project, the real PageSpeed API and Vercel were not available for testing

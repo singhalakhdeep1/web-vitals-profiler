@@ -1,0 +1,48 @@
+# The sync API with Redis and a local Firestore (the official emulator). For production point the API at a real
+# Firebase project instead (FIREBASE_PROJECT_ID + FIREBASE_SERVICE_ACCOUNT, without FIRESTORE_EMULATOR_HOST).
+#
+#   cp .env.example .env     # set JWT_SECRET
+#   docker compose up -d --build
+#   then in the extension: Settings -> Cloud Sync -> server http://localhost:8787
+
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ characters)}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8787}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-demo-wvp}
+      FIRESTORE_EMULATOR_HOST: ${FIRESTORE_EMULATOR_HOST:-firestore:8086}
+      REDIS_URL: redis://redis:6379
+      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-Web Vitals Profiler <alerts@localhost>}
+    depends_on:
+      redis: { condition: service_healthy }
+      firestore: { condition: service_started }
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # local Firestore (data is kept only while the container lives; use a Firebase project for real data)
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    restart: unless-stopped
+    command: ["gcloud", "emulators", "firestore", "start", "--host-port=0.0.0.0:8086"]
+
+volumes:
+  redis-data:

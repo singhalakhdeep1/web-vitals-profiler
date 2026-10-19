@@ -75,3 +75,15 @@ flowchart TB
 | v0.4 | Overlay | On-page vitals overlay |
 | v0.5 | IndexedDB | Historical trends, regression detection |
 | v1.0 | Release | Chrome Store, Firefox, landing page |
+
+## Sync server (added)
+
+The extension can sign in to the sync API (`apps/api`, see README). Measured vitals then flow:
+page-world script → content script → background worker → upload queue (`packages/service-worker`, persisted in
+`chrome.storage`) → `POST /api/vitals` → Firestore (`packages/firebase`). The side panel's server-backed views
+(trends, budgets, scores, Lighthouse, alerts, team dashboards, A/B tests, badges) read from the API through
+`packages/api-client`; the Speed view analyzes the open page locally with `packages/core`.
+
+The page-world script is bundled as one file (`injected/injected-script.js`) and registered by the background with
+`chrome.scripting.registerContentScripts({ world: "MAIN" })`, because module chunks cannot be imported in a page's
+own JavaScript world.

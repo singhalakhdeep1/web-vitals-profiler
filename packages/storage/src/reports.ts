@@ -106,8 +106,7 @@ export async function exportReport(
 
 function groupByName(metrics: VitalMetric[]): Record<string, VitalMetric[]> {
   return metrics.reduce<Record<string, VitalMetric[]>>((acc, m) => {
-    acc[m.name] = acc[m.name] ?? [];
-    acc[m.name].push(m);
+    (acc[m.name] ??= []).push(m);
     return acc;
   }, {});
 }

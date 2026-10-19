@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface ScoreBreakdown {
   category: string;
@@ -29,6 +30,7 @@ export function PerformanceScoring({ userId }: PerformanceScoringProps) {
     bestPractices: 20,
     seo: 15,
   });
+  const [scoreError, setScoreError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -37,7 +39,7 @@ export function PerformanceScoring({ userId }: PerformanceScoringProps) {
 
   const fetchScores = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/performance-scores`);
+      const response = await apiFetch(`/api/users/${userId}/performance-scores`);
       if (response.ok) {
         const data = await response.json();
         setScores(data);
@@ -52,17 +54,20 @@ export function PerformanceScoring({ userId }: PerformanceScoringProps) {
 
   const calculateScore = async (url: string) => {
     try {
-      const response = await fetch('/api/performance/calculate', {
+      const response = await apiFetch('/api/performance/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, url, weights: customWeights }),
       });
 
-      if (response.ok) {
-        const score = await response.json();
-        setScores(prev => [score, ...prev]);
-        setSelectedScore(score);
+      if (!response.ok) {
+        setScoreError((await response.json().catch(() => ({}))).error ?? 'Score calculation failed');
+        return;
       }
+      setScoreError(null);
+      const score = await response.json();
+      setScores(prev => [score, ...prev]);
+      setSelectedScore(score);
     } catch (error) {
       console.error('Failed to calculate score:', error);
     }
@@ -92,6 +97,7 @@ export function PerformanceScoring({ userId }: PerformanceScoringProps) {
       {/* Score Calculator */}
       <div className="border rounded-lg p-4">
         <h3 className="font-semibold mb-3">Calculate Score</h3>
+        {scoreError && <p className="mb-2 text-sm text-red-600" role="alert">{scoreError}</p>}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">URL</label>
@@ -249,16 +255,16 @@ export function PerformanceScoring({ userId }: PerformanceScoringProps) {
       <div className="border rounded-lg p-4">
         <h3 className="font-semibold mb-3">Score Presets</h3>
         <div className="grid grid-cols-2 gap-2">
-          <button className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
+          <button onClick={() => setCustomWeights({ speed: 70, accessibility: 10, bestPractices: 10, seo: 10 })} className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
             Google Core Web Vitals
           </button>
-          <button className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
+          <button onClick={() => setCustomWeights({ speed: 55, accessibility: 25, bestPractices: 10, seo: 10 })} className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
             Mobile First
           </button>
-          <button className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
+          <button onClick={() => setCustomWeights({ speed: 30, accessibility: 15, bestPractices: 15, seo: 40 })} className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
             SEO Optimized
           </button>
-          <button className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
+          <button onClick={() => setCustomWeights({ speed: 25, accessibility: 50, bestPractices: 15, seo: 10 })} className="px-3 py-2 border rounded text-sm hover:bg-gray-50">
             Accessibility Focused
           </button>
         </div>

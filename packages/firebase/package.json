@@ -1,0 +1,22 @@
+{
+  "name": "@wvp/firebase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Document store for the API: Firestore (firebase-admin, emulator aware) or in-memory",
+  "exports": {
+    ".": "./config.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wvp/wasm": "workspace:*",
+    "firebase-admin": "^12.7.0"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "typescript": "5.9.2"
+  }
+}

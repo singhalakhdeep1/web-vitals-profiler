@@ -86,13 +86,15 @@ export function initTBTObserver(onMetric: (metric: VitalMetric) => void, url: st
   if (!("PerformanceObserver" in window)) return () => {};
 
   let totalBlockingTime = 0;
+  // one id per page load: every update replaces the previous TBT value instead of adding a sample
+  const id = `tbt-${Math.round(performance.timeOrigin)}-${Math.random().toString(36).slice(2, 8)}`;
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
       if (entry.duration > 50) {
         totalBlockingTime += entry.duration - 50;
       }
     }
-    onMetric(createVitalMetric("TBT", totalBlockingTime, url));
+    onMetric({ ...createVitalMetric("TBT", totalBlockingTime, url), id });
   });
 
   try {

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface TrendData {
   date: Date;
-  metric: 'LCP' | 'FID' | 'CLS' | 'FCP' | 'TTFB';
+  metric: 'LCP' | 'INP' | 'CLS' | 'FCP' | 'TTFB';
   value: number;
 }
 
@@ -12,7 +13,7 @@ interface HistoricalTrendChartsProps {
 
 export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
   const [trendData, setTrendData] = useState<TrendData[]>([]);
-  const [selectedMetric, setSelectedMetric] = useState<'LCP' | 'FID' | 'CLS' | 'FCP' | 'TTFB'>('LCP');
+  const [selectedMetric, setSelectedMetric] = useState<'LCP' | 'INP' | 'CLS' | 'FCP' | 'TTFB'>('LCP');
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -20,9 +21,34 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
     fetchTrendData();
   }, [userId, selectedMetric, timeRange]);
 
+  /** Downloads the trend as CSV, JSON or an SVG line chart. */
+  const exportData = (format: 'csv' | 'json' | 'svg') => {
+    let body: string;
+    let type: string;
+    if (format === 'csv') {
+      body = ['date,metric,p75', ...trendData.map((d) => `${new Date(d.date).toISOString().slice(0, 10)},${d.metric},${d.value}`)].join('\n');
+      type = 'text/csv';
+    } else if (format === 'json') {
+      body = JSON.stringify(trendData, null, 2);
+      type = 'application/json';
+    } else {
+      const w = 640;
+      const h = 240;
+      const max = Math.max(1, ...trendData.map((d) => d.value));
+      const pts = trendData.map((d, i) => `${20 + (i * (w - 40)) / Math.max(1, trendData.length - 1)},${h - 20 - (d.value / max) * (h - 40)}`).join(' ');
+      body = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="#fff"/><text x="20" y="16" font-family="sans-serif" font-size="12">${selectedMetric} p75 (${timeRange})</text><polyline fill="none" stroke="#2563eb" stroke-width="2" points="${pts}"/></svg>`;
+      type = 'image/svg+xml';
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([body], { type }));
+    a.download = `${selectedMetric.toLowerCase()}-trend-${timeRange}.${format}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  };
+
   const fetchTrendData = async () => {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/users/${userId}/trends?metric=${selectedMetric}&range=${timeRange}`
       );
       if (response.ok) {
@@ -39,7 +65,7 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
   const getMetricLabel = (metric: string) => {
     const labels: Record<string, string> = {
       LCP: 'Largest Contentful Paint',
-      FID: 'First Input Delay',
+      INP: 'Interaction to Next Paint',
       CLS: 'Cumulative Layout Shift',
       FCP: 'First Contentful Paint',
       TTFB: 'Time to First Byte',
@@ -50,7 +76,7 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
   const getMetricUnit = (metric: string) => {
     const units: Record<string, string> = {
       LCP: 'ms',
-      FID: 'ms',
+      INP: 'ms',
       CLS: '',
       FCP: 'ms',
       TTFB: 'ms',
@@ -86,11 +112,11 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
           <label className="block text-sm font-medium mb-1">Metric</label>
           <select
             value={selectedMetric}
-            onChange={(e) => setSelectedMetric(e.target.value as any)}
+            onChange={(e) => setSelectedMetric(e.target.value as TrendData['metric'])}
             className="w-full border rounded px-3 py-2"
           >
             <option value="LCP">Largest Contentful Paint</option>
-            <option value="FID">First Input Delay</option>
+            <option value="INP">Interaction to Next Paint</option>
             <option value="CLS">Cumulative Layout Shift</option>
             <option value="FCP">First Contentful Paint</option>
             <option value="TTFB">Time to First Byte</option>
@@ -100,7 +126,7 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
           <label className="block text-sm font-medium mb-1">Time Range</label>
           <select
             value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value as any)}
+            onChange={(e) => setTimeRange(e.target.value as typeof timeRange)}
             className="border rounded px-3 py-2"
           >
             <option value="7d">7 Days</option>
@@ -187,10 +213,10 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
       <div className="border rounded-lg p-4">
         <h3 className="font-semibold mb-3">Compare Metrics</h3>
         <div className="grid grid-cols-2 gap-4">
-          {['LCP', 'FID', 'CLS', 'FCP', 'TTFB'].map((metric) => (
+          {['LCP', 'INP', 'CLS', 'FCP', 'TTFB'].map((metric) => (
             <button
               key={metric}
-              onClick={() => setSelectedMetric(metric as any)}
+              onClick={() => setSelectedMetric(metric as TrendData['metric'])}
               className={`p-3 border rounded text-left ${
                 selectedMetric === metric ? 'border-blue-500 bg-blue-50' : ''
               }`}
@@ -206,13 +232,13 @@ export function HistoricalTrendCharts({ userId }: HistoricalTrendChartsProps) {
       <div className="border rounded-lg p-4">
         <h3 className="font-semibold mb-3">Export Data</h3>
         <div className="flex gap-2">
-          <button className="px-4 py-2 bg-blue-500 text-white rounded text-sm">
+          <button onClick={() => exportData('csv')} className="px-4 py-2 bg-blue-500 text-white rounded text-sm">
             Export CSV
           </button>
-          <button className="px-4 py-2 border rounded text-sm">
+          <button onClick={() => exportData('json')} className="px-4 py-2 border rounded text-sm">
             Export JSON
           </button>
-          <button className="px-4 py-2 border rounded text-sm">
+          <button onClick={() => exportData('svg')} className="px-4 py-2 border rounded text-sm">
             Export Chart Image
           </button>
         </div>

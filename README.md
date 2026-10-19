@@ -1,449 +1,186 @@
 # Web Vitals Profiler
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Chrome Extension](https://img.shields.io/badge/Manifest-V3-4285F4?logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/)
+A browser extension that measures Core Web Vitals (LCP, CLS, INP, FCP, TTFB, TBT) on every page you visit, shows
+them live (popup, DevTools panel, side panel, on-page badge), keeps a local history with regression detection, and
+analyzes each page's resources for concrete speed fixes. Signed in to the optional **sync server**, it also uploads
+your measurements (real-user monitoring) and adds trends, performance budgets, Lighthouse runs, scoring, Slack /
+e-mail alerts, team dashboards, A/B comparisons, embeddable badges and reports.
 
-A production-grade **Manifest V3 Chrome extension** for profiling **Core Web Vitals** in real time — built as a **Turborepo monorepo** with separate React apps for popup, DevTools panel, side panel, and options page.
-
-> **Portfolio status:** ~**80% complete** · 1 ✅ · 4 ⚠️ · 0 ❌ (5 modules)
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Chrome Extension Surfaces](#chrome-extension-surfaces)
-- [Browser APIs Used](#browser-apis-used)
-- [Project Structure](#project-structure)
-- [Package Map](#package-map)
-- [Getting Started](#getting-started)
-- [Development](#development)
-- [Testing](#testing)
-- [Architecture](#architecture)
-- [Message Passing](#message-passing)
-- [Module Progress](#module-progress)
-- [Configuration](#configuration)
-- [CI/CD](#cicd)
-- [Browser Support](#browser-support)
-- [Interview Highlights](#interview-highlights)
-- [Remaining Work](#remaining-work)
-- [Documentation](#documentation)
-- [License](#license)
-
----
-
-## Overview
-
-Web Vitals Profiler captures **LCP, CLS, INP, FCP, TTFB, and TBT** from any webpage and surfaces them across multiple extension contexts — popup snapshot, persistent side panel, custom DevTools panel, on-page overlay badge, and exportable reports.
-
-All data is stored **locally** in IndexedDB. Nothing is sent to external servers unless you configure a Slack webhook.
-
----
+Chrome and Edge (Manifest V3), with Firefox and Safari packages derived from the same build.
 
 ## Features
 
-| Feature                      | Status | Implementation                                         |
-| ---------------------------- | ------ | ------------------------------------------------------ |
-| Live Core Web Vitals         | ✅     | `web-vitals` library + `PerformanceObserver`           |
-| Total Blocking Time (TBT)    | ✅     | Custom `PerformanceObserver` for long tasks            |
-| DevTools panel + live charts | ✅     | Recharts + `chrome.runtime.Port` streaming             |
-| Side panel with live metrics | ✅     | `chrome.runtime.onMessage` broadcast                   |
-| On-page overlay badge        | ✅     | Content script DOM overlay, toggle via storage         |
-| IndexedDB persistence        | ✅     | Dexie — metrics table + sessions table                 |
-| Regression detection         | ✅     | Recent 1-week vs 4-week rolling average                |
-| Session history              | ✅     | Saved on tab close via background SW                   |
-| Export reports               | ✅     | JSON, CSV, HTML from Options page                      |
-| Slack webhook notifications  | ✅     | Configurable in Options                                |
-| Firefox compatibility        | ✅     | `browser_specific_settings.gecko` in manifest          |
-| Chrome Store screenshots     | ⚠️     | Listing copy in `store/`; PNGs not generated           |
-| Extension-loaded E2E         | ⚠️     | Playwright tests browser APIs, not full extension flow |
-| Historical trend charts      | ⚠️     | Side panel charts exist; trend UI is thin              |
+**In the extension (works offline, no account)**
+- Live Core Web Vitals per tab: popup, side panel, DevTools panel with live charts, on-page overlay badge
+- Measured in the page's own JavaScript world with `web-vitals` plus a Total Blocking Time observer; every change is
+  reported live
+- Local history in IndexedDB, sessions saved when tabs close, regression detection (last week vs the 4 weeks before)
+- **Speed tab**: resource-timing analysis of the open page: render-blocking resources, large images and bundles,
+  uncompressed text, third-party origins, fonts, critical-path bottlenecks, LCP preload advice
+- Export JSON / CSV / HTML, Slack report webhook
 
----
-
-## Tech Stack
-
-### Core
-
-| Category        | Technology        | Version  | Purpose                              |
-| --------------- | ----------------- | -------- | ------------------------------------ |
-| Language        | TypeScript        | 5.9      | Strict typing across all contexts    |
-| UI Framework    | React             | 19       | Popup, DevTools, side panel, options |
-| Build Tool      | Vite              | 6        | Fast HMR dev server                  |
-| Extension Build | CRXJS Vite Plugin | 2.0 beta | MV3 bundling + hot reload            |
-| Package Manager | pnpm              | 9        | Workspace dependency management      |
-| Monorepo        | Turborepo         | 2.10     | Parallel builds, task caching        |
-
-### UI & Styling
-
-| Category        | Technology          | Purpose                                |
-| --------------- | ------------------- | -------------------------------------- | --------------------------------- |
-| CSS             | Tailwind CSS        | 4                                      | Utility-first styling             |
-| Tailwind Plugin | `@tailwindcss/vite` | Vite integration                       |
-| Charts          | Recharts            | 2.15                                   | DevTools + side panel live charts |
-| State           | Zustand             | 5                                      | Vitals store + overlay toggle     |
-| Components      | `@wvp/ui`           | Shared Button, Card, Header, MetricRow |
-
-### Data & Performance
-
-| Category       | Technology             | Purpose |
-| -------------- | ---------------------- | ------- | ----------------------------------- |
-| IndexedDB ORM  | Dexie                  | 4       | Metrics + sessions persistence      |
-| Web Vitals     | `web-vitals`           | 4.2     | LCP, CLS, INP, FCP, TTFB collection |
-| Performance    | `PerformanceObserver`  | Native  | TBT via long-task entries           |
-| Chrome Storage | `chrome.storage.local` | Native  | Extension state, overlay toggle     |
-
-### Chrome Extension Platform
-
-| API                | Used In             | Purpose                            |
-| ------------------ | ------------------- | ---------------------------------- |
-| `chrome.runtime`   | All contexts        | Message passing, `onConnect` ports |
-| `chrome.tabs`      | Background SW       | Tab lifecycle, vitals per tab      |
-| `chrome.storage`   | Background, Options | Settings, overlay state            |
-| `chrome.sidePanel` | Background          | Side panel API                     |
-| `chrome.scripting` | Manifest permission | Dynamic script injection           |
-| DevTools API       | DevTools panel      | Custom profiling panel             |
-
-### Testing & Quality
-
-| Category     | Technology          | Purpose                           |
-| ------------ | ------------------- | --------------------------------- | --------------------------------- |
-| Unit Tests   | Vitest              | 3.1                               | Package-level tests               |
-| E2E Tests    | Playwright          | 1.51                              | Browser API + manifest validation |
-| Linting      | ESLint              | 9                                 | Shared `@repo/eslint-config`      |
-| Formatting   | Prettier            | 3.7                               | Code style + Tailwind plugin      |
-| Git Hooks    | Husky + lint-staged | Pre-commit lint + format          |
-| CI/CD        | GitHub Actions      | Lint, typecheck, test, build, E2E |
-| Chrome Types | `@types/chrome`     | Extension API typings             |
-
----
-
-## Chrome Extension Surfaces
-
-| Surface             | Path                    | Description                                          |
-| ------------------- | ----------------------- | ---------------------------------------------------- |
-| **Popup**           | `apps/popup/`           | Quick vitals snapshot for active tab                 |
-| **Side Panel**      | `apps/side-panel/`      | Persistent live metrics + Recharts                   |
-| **DevTools Panel**  | `apps/devtools/`        | Developer-grade profiling with port streaming        |
-| **Options Page**    | `apps/options/`         | Export, Slack, overlay toggle, sessions, regressions |
-| **Background SW**   | `extension/background/` | Message hub, storage, tab lifecycle                  |
-| **Content Script**  | `extension/content/`    | Overlay badge, message bridge                        |
-| **Injected Script** | `extension/injected/`   | Page-world `PerformanceObserver`                     |
-
-### Manifest Permissions
-
-```
-storage · tabs · activeTab · scripting · sidePanel
-host_permissions: <all_urls>
-```
-
----
-
-## Browser APIs Used
-
-| API                          | Module | What It Does                          |
-| ---------------------------- | ------ | ------------------------------------- |
-| `PerformanceObserver`        | M2     | Observes LCP, long tasks (TBT)        |
-| `web-vitals`                 | M2     | Standardized CWV metric collection    |
-| `IndexedDB` via Dexie        | M4     | Time-series metrics + session storage |
-| `chrome.runtime.Port`        | M3     | DevTools live streaming               |
-| `chrome.runtime.sendMessage` | M2     | Live broadcast to popup/side panel    |
-| `chrome.storage.local`       | M1     | Extension settings persistence        |
-| `chrome.tabs.onRemoved`      | M4     | Session save on tab close             |
-
----
-
-## Project Structure
-
-```
-web-vitals-profiler/
-├── apps/
-│   ├── popup/              # Quick vitals snapshot (React 19)
-│   ├── devtools/           # DevTools panel + Recharts timeline
-│   ├── side-panel/         # Persistent live metrics view
-│   └── options/            # Export, Slack, overlay, sessions
-├── extension/
-│   ├── background/
-│   │   └── service-worker.ts   # Message hub, storage, tab lifecycle
-│   ├── content/
-│   │   └── content-script.ts   # Overlay badge + bridge
-│   ├── injected/
-│   │   └── injected-script.ts  # Page-world PerformanceObserver
-│   ├── manifest.ts             # MV3 manifest (CRXJS)
-│   └── icons/                    # 16/32/48/128 PNG icons
-├── packages/
-│   ├── performance/        # web-vitals + TBT observer + ratings
-│   ├── storage/            # Dexie DB, regression, export, Slack
-│   ├── messaging/          # Typed createMessage / onMessage
-│   ├── hooks/              # useVitalsStore (Zustand), useRegressions
-│   ├── ui/                 # Button, Card, Header, MetricRow, StatusBadge
-│   ├── types/              # VitalMetric, VitalsSnapshot, MessageType
-│   └── utils/              # Logger, generateId
-├── tests/
-│   └── e2e/                # Playwright foundation tests
-├── store/
-│   ├── CHROME_STORE_LISTING.md
-│   └── landing/index.html  # Static marketing page
-├── docs/
-│   ├── architecture.md
-│   └── roadmap.md
-├── scripts/
-│   └── generate-icons.mjs
-├── .github/workflows/ci.yml
-├── turbo.json
-├── pnpm-workspace.yaml
-├── vitest.config.ts
-├── playwright.config.ts
-└── package.json
-```
-
----
-
-## Package Map
-
-| Package            | Scope                  | Key Exports                                                          |
-| ------------------ | ---------------------- | -------------------------------------------------------------------- |
-| `@wvp/performance` | `packages/performance` | `createVitalMetric`, `getVitalRating`, `initTBTObserver`             |
-| `@wvp/storage`     | `packages/storage`     | `saveMetric`, `getMetrics`, `detectRegressions`, `exportMetricsJson` |
-| `@wvp/messaging`   | `packages/messaging`   | `createMessage`, `onMessage`, `sendToTab`                            |
-| `@wvp/hooks`       | `packages/hooks`       | `useVitalsStore`, `useRegressions`, `exportReport`                   |
-| `@wvp/ui`          | `packages/ui`          | `Button`, `Card`, `Header`, `MetricRow`                              |
-| `@wvp/types`       | `packages/types`       | `VitalMetric`, `VitalsSnapshot`, `MessageType`                       |
-| `@wvp/utils`       | `packages/utils`       | `logger`, `generateId`                                               |
-| `@wvp/extension`   | `extension/`           | CRXJS entry — bundles all contexts                                   |
-
----
-
-## Getting Started
-
-### Prerequisites
-
-| Tool          | Version            |
-| ------------- | ------------------ |
-| Node.js       | 22 LTS+            |
-| pnpm          | 9+                 |
-| Google Chrome | Latest             |
-| Git           | Any recent version |
-
-### Install
-
-```bash
-git clone <your-repo-url>
-cd web-vitals-profiler
-pnpm install
-node scripts/generate-icons.mjs
-```
-
-### Development (Hot Reload)
-
-```bash
-pnpm dev
-```
-
-Opens the CRXJS dev server. Load `extension/dist` in Chrome — changes hot-reload across popup, content script, and background.
-
-### Production Build
-
-```bash
-pnpm build
-```
-
-Output: `extension/dist/` — load this folder in Chrome.
-
-### Load in Chrome
-
-1. Run `pnpm build` (or `pnpm dev`)
-2. Open `chrome://extensions`
-3. Enable **Developer mode** (top right)
-4. Click **Load unpacked** → select `extension/dist`
-5. Pin the extension → click icon to open popup
-6. Open DevTools → **Web Vitals Profiler** tab for live charts
-7. Right-click icon → **Open side panel** for persistent view
-
----
-
-## Development
-
-### Available Scripts
-
-| Command             | Description                                     |
-| ------------------- | ----------------------------------------------- |
-| `pnpm dev`          | CRXJS dev server with HMR (port 5173)           |
-| `pnpm build`        | Typecheck + production build → `extension/dist` |
-| `pnpm test`         | Vitest unit tests across packages               |
-| `pnpm test:e2e`     | Playwright E2E tests                            |
-| `pnpm lint`         | ESLint across all workspaces                    |
-| `pnpm check-types`  | TypeScript `--noEmit` across all packages       |
-| `pnpm format`       | Prettier write all files                        |
-| `pnpm format:check` | Prettier check (CI)                             |
-
-### Environment Variables
-
-Copy `.env.example` to `.env` (optional — used by Vite client):
-
-```env
-VITE_EXTENSION_NAME=Web Vitals Profiler
-VITE_EXTENSION_VERSION=1.0.0
-```
-
----
-
-## Testing
-
-| Layer  | Tool       | Location                   | Coverage                            |
-| ------ | ---------- | -------------------------- | ----------------------------------- |
-| Unit   | Vitest     | `packages/*/src/*.test.ts` | Performance ratings, storage export |
-| E2E    | Playwright | `tests/e2e/`               | Browser APIs, manifest structure    |
-| Manual | Chrome     | `chrome://extensions`      | Full extension flow                 |
-
-```bash
-pnpm test          # Unit tests
-pnpm test:e2e      # E2E (requires Playwright chromium)
-```
-
----
+**With a sync server (signed in from Settings → Cloud Sync)**
+- Background sync: measurements queue in `chrome.storage` (survives offline periods and browser restarts), upload in
+  batches, back off on failure and retry every minute
+- **Trends**: daily p75 per metric (7 / 30 / 90 days), export CSV / JSON / SVG chart
+- **Budgets**: per metric (optionally per page), passing / warning / failing from the last 7 days' p75
+- **Lighthouse**: lab runs through PageSpeed Insights (categories and desktop / mobile / both), with opportunities
+  and CrUX field data
+- **Scores**: weighted score from lab categories and field Core Web Vitals, with presets and recommendations
+- **Alerts**: Slack and e-mail channels, rules on p75 (above / below), cool-down, delivery history, test sends
+- **Team dashboards**: invite by e-mail (pending invites join on sign-up), roles, pages whose field data from every
+  member is shown together, optional public read-only view
+- **A/B tests**: two URLs compared with Welch's t-test (winner only when significant)
+- **Badges**: embeddable SVG Core Web Vitals badges with ready-to-paste HTML
+- **Analytics and reports**: segments by device / browser / connection / country, rating distribution, weekly
+  cohorts, anomalies; executive or technical reports (or your own branded template) as HTML, CSV or JSON
 
 ## Architecture
 
 ```
-                    Chrome Browser
-                           │
-        ┌──────────────────┼─────────────────┐
-        │                  │                 │
-        ▼                  ▼                 ▼
-   Popup UI          DevTools UI      Side Panel UI
-   (React 19)        (Recharts)       (Recharts)
-        │                  │                 │
-        └──────────────┬───┴─────────────────┘
-                       │
-           chrome.runtime.sendMessage
-           chrome.runtime.Port (DevTools)
-                       │
-               Background Service Worker
-               (vitalsByTab Map + Dexie)
-                       │
-        ┌──────────────┴───────────────┐
-        │                              │
-        ▼                              ▼
- Content Script                 IndexedDB (Dexie)
- (overlay badge)                metrics + sessions
-        │
-        ▼
- Injected Script
- (PerformanceObserver + web-vitals)
-        │
-        ▼
-      Web Page
+ Page (MAIN world)                Extension                                    Sync server (apps/api)
+ injected-script.js  ──post──►  content script ──► background service worker ──HTTPS──► Web-standard handler
+  web-vitals, TBT,               overlay badge      IndexedDB history, regressions        Node server / Vercel function
+  resource timing                                   speed analysis (@wvp/core)            ├─ Firestore (firebase-admin)
+                                                    upload queue (@wvp/service-worker)    ├─ Redis: cache, rate limits,
+ popup · side panel · DevTools panel · options ◄── messages / ports                      │   alert cool-downs
+                                                                                          ├─ PageSpeed Insights
+                                                                                          └─ Slack / SMTP
 ```
 
----
+| Path | What it is |
+|---|---|
+| `extension/` | Manifest, background service worker (+ Chromium / Firefox / Safari adapters), content script, page-world script, build of every browser target |
+| `apps/popup`, `apps/side-panel`, `apps/devtools`, `apps/options` | Extension pages (React 19, Tailwind 4) |
+| `apps/api` | Sync API: accounts, ingest, stats, trends, analytics, reports, budgets, Lighthouse, scores, alerts, teams, A/B tests, badges |
+| `packages/types`, `messaging`, `hooks`, `ui`, `utils`, `performance`, `storage` | Shared extension code |
+| `packages/api-client` | Sync API client for extension pages and the worker |
+| `packages/service-worker` | Background sync: persistent upload queue with back-off and alarms |
+| `packages/core` | Thresholds, scoring, regressions, A/B statistics, analytics, cohorts, resource / critical-path analysis, reports |
+| `packages/wasm` | WebAssembly statistics (heap sort, percentiles, mean, variance) from `src/vitals.wat` |
+| `packages/firebase` | Document store: Firestore (emulator aware) or in-memory |
+| `packages/services` | Redis cache, token-bucket rate limiting (atomic Lua), structured JSON logging with correlation ids |
+| `packages/pagespeed` | PageSpeed Insights client (remote Lighthouse) |
+| `packages/vercel` | Vercel function adapter (`apps/api/api/index.ts`) |
+| `packages/lighthouse-ci` | Lighthouse CI configuration (`lighthouserc.cjs`: pages from `LHCI_URLS`, Core Web Vitals budgets) |
+| `firebase.json`, `firestore.rules`, `firestore.indexes.json` | Firestore project files (rules deny all client access; indexes for the API's queries) |
 
-## Message Passing
+## Getting started
 
-| Message Type         | Direction              | Purpose                 |
-| -------------------- | ---------------------- | ----------------------- |
-| `VITALS_UPDATE`      | Injected → BG → UI     | Live metric broadcast   |
-| `GET_VITALS`         | UI → BG                | Snapshot for active tab |
-| `GET_VITALS_HISTORY` | UI → BG                | IndexedDB query         |
-| `GET_REGRESSIONS`    | Options → BG           | Regression report       |
-| `GET_SESSIONS`       | Options → BG           | Session history         |
-| `OVERLAY_TOGGLE`     | Options → BG → Content | Show/hide overlay       |
-| `EXPORT_REPORT`      | Options → BG           | JSON/CSV/HTML export    |
-| `CLEAR_DATA`         | Options → BG           | Wipe IndexedDB          |
+Requirements: Node 22, pnpm 9.
 
----
+```bash
+pnpm install
+pnpm build                       # builds extension/dist plus dist-edge, dist-firefox, dist-safari
+```
 
-## Module Progress
+**Load the extension**: `chrome://extensions` (or `edge://extensions`) → Developer mode → Load unpacked →
+`extension/dist`. Development with hot reload: `pnpm dev`.
 
-| #   | Module                 | Version | Status  | Key Deliverables                       |
-| --- | ---------------------- | ------- | ------- | -------------------------------------- |
-| 1   | Extension Foundation   | v0.1    | ⚠️ ~90% | Monorepo, MV3, all UI, CI, Husky       |
-| 2   | Performance Monitoring | v0.2    | ✅      | LCP, CLS, INP, FCP, TTFB, TBT          |
-| 3   | DevTools + Overlay     | v0.3    | ✅      | Recharts, port streaming, overlay      |
-| 4   | IndexedDB Analytics    | v0.5    | ⚠️ ~75% | Dexie, regression, sessions            |
-| 5   | Export & Release       | v1.0    | ⚠️ ~70% | JSON/CSV/HTML, Slack, Firefox manifest |
+**Run the sync server** (optional):
 
-**Overall: ~80%** · 1 complete · 4 partial · 0 missing
+```bash
+cp .env.example .env             # set JWT_SECRET (32+ characters)
+pnpm --filter @wvp/api dev       # http://localhost:8787, in-memory storage unless Firestore is configured
+# or everything with Firestore (emulator) and Redis:
+docker compose up -d --build
+```
 
----
+Then in the extension: Settings → Cloud Sync → server `http://localhost:8787` → create an account.
+
+**Production storage**: set `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT` (service-account JSON), deploy the
+indexes with `firebase deploy --only firestore:indexes,firestore:rules`, and set `REDIS_URL`. **Vercel**: deploy
+`apps/api` (it contains `vercel.json` and `api/index.ts`); the function uses the Node.js runtime because Firestore
+and Redis need it.
+
+### Other browsers
+
+| Target | Folder | Notes |
+|---|---|---|
+| Chrome | `extension/dist` | Manifest V3 service worker, side panel |
+| Edge | `extension/dist-edge` | Same package, `minimum_chrome_version` 114 |
+| Firefox 128+ | `extension/dist-firefox` | Background runs as an event page, side panel becomes a sidebar |
+| Safari 16.4+ | `extension/dist-safari` | No side panel or DevTools panel; convert on macOS with `xcrun safari-web-extension-converter extension/dist-safari` |
+
+The per-browser differences are in `extension/manifest.{edge,firefox,safari}.json`, applied by
+`extension/scripts/build-targets.mjs`; the background picks its adapter at runtime (`extension/background/platform.ts`).
 
 ## Configuration
 
-### Overlay Toggle
+Server settings are listed in [.env.example](.env.example): JWT secret, Firestore project / service account /
+emulator, Redis, PageSpeed key, SMTP for e-mail alerts, alert cool-down. The extension keeps its settings in
+`chrome.storage.local` (`wvp:state`, `wvp:sync`, `wvp:upload-queue`).
 
-Options page → **On-Page Overlay** → Enable/Disable. Stored in `chrome.storage.local` under `wvp:state`.
+## Sync API
 
-### Slack Integration
+All routes need `Authorization: Bearer <token>` (from register / login) except those marked public.
 
-Options page → enter webhook URL → **Send Report to Slack**. Sends top 10 metrics as a formatted notification.
+| Area | Routes |
+|---|---|
+| Accounts | `POST /api/auth/register` (public) · `POST /api/auth/login` (public) · `GET /api/auth/me` |
+| Vitals | `POST /api/vitals` (batch ingest, idempotent) · `GET /api/vitals?url=` · `GET /api/stats?url=&range=` · `GET /api/users/:id/urls` · `GET /api/users/:id/trends?metric=&range=&url=` |
+| Analytics / reports | `GET /api/analytics?url=&range=` · `GET /api/reports?url=&range=&format=html\|csv\|json&template=` · `GET/POST /api/report-templates` |
+| Budgets | `GET /api/users/:id/performance-budgets` · `POST /api/performance-budgets` · `DELETE /api/performance-budgets/:id` |
+| Lighthouse / scores | `GET /api/users/:id/lighthouse-reports` · `POST /api/lighthouse/run` · `GET /api/users/:id/performance-scores` · `POST /api/performance/calculate` |
+| Alerts | `GET /api/users/:id/alert-channels\|alert-rules\|alert-history` · `POST /api/alert-channels` · `POST /api/alert-channels/:id/toggle\|test` · `DELETE /api/alert-channels/:id` · `POST /api/alert-rules` · `POST /api/alert-rules/:id/toggle` · `DELETE /api/alert-rules/:id` |
+| Teams | `GET /api/users/:id/team-dashboards` · `POST /api/team-dashboards` · `PATCH/DELETE /api/team-dashboards/:id` · `POST /api/team-dashboards/:id/invite` · `DELETE /api/team-dashboards/:id/members/:memberId` · `GET /api/team-dashboards/:id/summary` · `GET /api/public/dashboards/:id` (public) |
+| A/B tests | `GET /api/users/:id/ab-tests` · `POST /api/ab-tests` · `GET /api/ab-tests/:id/comparison` · `POST /api/ab-tests/:id/status` · `DELETE /api/ab-tests/:id` |
+| Badges | `GET /api/users/:id/badge-configs` · `POST /api/badge-configs` · `POST /api/badge-configs/:id/toggle` · `DELETE /api/badge-configs/:id` · `GET /api/users/:id/badge-data` · `GET /api/badges/:id.svg` (public) |
+| Operations | `GET /health` (store, Redis, WebAssembly) |
 
-### Regression Detection
+Rate limits (token buckets, shared through Redis): sign-in 10 / 15 min per address and e-mail, sign-up 10 / hour per
+address, ingest 240 / min and API 600 / min per user, Lighthouse 20 / hour per user. Logs are one JSON object per line
+with the request's correlation id (`X-Request-Id`) and user, plus audit events.
 
-Automatically compares last 7 days vs prior 4-week average per URL. Shown in Options when regressions are detected (>10% degradation).
+## Scripts
 
----
+| Command | What it does |
+|---|---|
+| `pnpm build` | Extension build and all browser targets |
+| `pnpm dev` | Extension with hot reload |
+| `pnpm check-types` | TypeScript across every package (21 tasks) |
+| `pnpm lint` | ESLint across the extension packages |
+| `pnpm test` / `pnpm test:e2e` | Vitest unit tests / Playwright specs |
+| `pnpm --filter @wvp/api dev` | Sync server with reload |
+| `pnpm --filter @wvp/wasm build:wasm` | Recompile `vitals.wat` |
 
-## CI/CD
+## What has been verified
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push/PR to `main`:
+On Windows, 2026-10-19:
 
-1. `pnpm install --frozen-lockfile`
-2. `node scripts/generate-icons.mjs`
-3. `pnpm lint`
-4. `pnpm check-types`
-5. `pnpm test`
-6. `pnpm build`
-7. `pnpm test:e2e` (Playwright + Chromium)
+- **Sync API**: 91 end-to-end checks through HTTP (accounts, ingest validation and idempotency, WebAssembly
+  percentiles against a manual computation, cache hits / invalidation, trends, regressions, segments, cohorts, all
+  report formats and templates, budgets, Lighthouse against a PageSpeed mock, scores, Slack and e-mail alerts against
+  local receivers with cool-down, team invites including pending sign-ups and public view, A/B significance, badges and
+  SVG, rate limits, structured logs) with **in-memory storage** and with **Firestore (official emulator) + Redis**.
+  All passed.
+- **Extension in Edge** (26 checks): measurement on a test page, sign-in from Settings, background sync of real
+  measurements (browser, device and connection recorded), speed analysis, and every side-panel view against the real
+  API: trends + export, budgets, Lighthouse, scores, alert channel / rule / test send, team dashboard with page data and
+  invite, A/B test, badge image, sign-out. All passed.
+- `pnpm check-types` (21/21), `pnpm lint` (12/12) and `pnpm build` pass.
 
----
+**Not verified here**: Firefox and Safari (not installed; their packages are generated but untested), a real
+Firebase project, the real PageSpeed Insights API, Slack itself, a Vercel deployment and the Docker image (no Docker
+daemon; `docker compose config` is valid).
 
-## Browser Support
-
-| Browser      | Status     | Notes                                |
-| ------------ | ---------- | ------------------------------------ |
-| Chrome 120+  | ✅ Primary | Full MV3 support                     |
-| Edge 120+    | ✅         | Chromium-based                       |
-| Firefox 109+ | ⚠️         | Manifest ready; manual QA needed     |
-| Safari       | ❌         | Not supported (no MV3 extension API) |
-
----
-
-## Interview Highlights
-
-- **MV3 service workers** replace persistent background pages — trade-offs for long-running tasks
-- **Content script isolated world** vs **injected script page world** — why both are needed
-- `chrome.runtime.sendMessage` (fire-and-forget) vs `chrome.runtime.Port` (persistent DevTools stream)
-- **IndexedDB schema** design for time-series vitals: `metrics` + `sessions` tables
-- **Regression detection**: rolling average vs spike detection — false positive trade-offs
-- **web-vitals library** vs raw `PerformanceObserver` — when to use each
-- **TBT calculation** from long-task entries and main-thread blocking
-
----
-
-## Remaining Work
-
-- [ ] Extension-loaded Playwright E2E (load unpacked + interact with popup)
-- [ ] Chrome Web Store screenshot PNG assets
-- [ ] Richer historical trend charts in side panel / options
-- [ ] Deploy static landing page from `store/landing/`
-- [ ] Firefox manual QA pass
-
----
+**Known gaps**
+- Unit tests: 9 of 10 pass; `packages/storage/src/index.test.ts` needs IndexedDB, which Node does not provide.
+- `.github/workflows/vitals.yml` (scheduled Lighthouse / collection) still calls `collect:vitals`, `analyze:vitals`
+  and `report:vitals` scripts that do not exist, and uses example.com; it needs updating before it can run.
+- Chrome Web Store screenshots are not generated yet (`store/`).
+- The expansion document's broader wish list (conversion impact, competitor comparison, PDF export, multi-language
+  reports) is not built; see [EXPANSION-COMPLETE.md](EXPANSION-COMPLETE.md).
 
 ## Documentation
 
-| Doc                                                     | Description                                        |
-| ------------------------------------------------------- | -------------------------------------------------- |
-| [Architecture](./docs/architecture.md)                  | Context diagram, message flows, package boundaries |
-| [Roadmap](./docs/roadmap.md)                            | 5-module development plan                          |
-| [Chrome Store Listing](./store/CHROME_STORE_LISTING.md) | Store copy and metadata                            |
-| [Portfolio Overview](../CHROME_EXTENSIONS_PORTFOLIO.md) | All three projects                                 |
-
----
+| Doc | Description |
+|---|---|
+| [HLD / LLD](WEB_VITALS_PROFILER_HLD_LLD.md) | Cache, rate limiting, structured logging and the layers, mapped to code |
+| [Implementation](WEB_VITALS_PROFILER_IMPLEMENTATION.md) | Browser targets, Lighthouse, PageSpeed, WASM, service worker, Firebase, Vercel |
+| [Expansion status](EXPANSION-COMPLETE.md) | Which expansion features exist and where |
+| [Architecture](./docs/architecture.md) | Message flows and package boundaries of the extension |
+| [Chrome Store Listing](./store/CHROME_STORE_LISTING.md) | Store copy and metadata |
 
 ## License
 

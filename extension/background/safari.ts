@@ -1,29 +1,13 @@
-// Safari extension background script
+// Safari background setup: Safari Web Extensions (macOS / iOS) have no side panel and no DevTools panel, so the side
+// panel page opens in a tab, and the extension is packaged with Xcode (see README: Safari).
+import type { PlatformAdapter } from "./platform";
 
-browser.runtime.onInstalled.addListener(() => {
-  console.log('Web Vitals Profiler installed');
-});
-
-browser.tabs.onActivated.addListener(async (activeInfo) => {
-  const tab = await browser.tabs.get(activeInfo.tabId);
-  if (tab.url && tab.url.startsWith('http')) {
-    browser.scripting.executeScript({
-      target: { tabId: activeInfo.tabId },
-      files: ['injected/index.js']
-    });
-  }
-});
-
-browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'VITALS_COLLECTED') {
-    browser.storage.local.set({
-      [request.url]: request.vitals
-    });
-  }
-  if (request.type === 'GET_VITALS') {
-    browser.storage.local.get([request.url], (result) => {
-      sendResponse(result[request.url]);
-    });
-  }
-  return true;
-});
+export const safariAdapter: PlatformAdapter = {
+  name: "safari",
+  hasSidePanel: false,
+  browserName(ua) {
+    const v = /Version\/(\d+)[\d.]* Safari/.exec(ua);
+    return v ? `Safari ${v[1]}` : "Safari";
+  },
+  async setup() {},
+};

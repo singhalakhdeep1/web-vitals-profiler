@@ -33,3 +33,6 @@ test-results
 
 # Extension build
 extension/dist
+
+# per-browser builds (extension/scripts/build-targets.mjs)
+dist-*/

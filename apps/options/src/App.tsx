@@ -11,6 +11,7 @@ import type { SessionRecord } from "@wvp/types";
 import { Button } from "@wvp/ui/button";
 import { Card } from "@wvp/ui/card";
 import { Header } from "@wvp/ui/header";
+import { SyncSettings } from "./SyncSettings";
 
 export function App() {
   const version = useExtensionVersion();
@@ -82,10 +83,12 @@ export function App() {
             </div>
             <div className="flex justify-between">
               <dt className="text-slate-500">Status</dt>
-              <dd className="font-mono text-emerald-600">Production Ready</dd>
+              <dd className="font-mono text-emerald-600">Active</dd>
             </div>
           </dl>
         </Card>
+
+        <SyncSettings />
 
         <Card title="On-Page Overlay">
           <p className="mb-3 text-sm text-slate-600">

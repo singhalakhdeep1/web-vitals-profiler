@@ -1,39 +1,18 @@
-// Vercel configuration for web vitals profiler
+// Vercel configuration for web vitals profiler: wraps the API handler (apps/api) as a Vercel function.
+// The function uses the Node.js runtime: Firestore (firebase-admin) and Redis (TCP) are not available on the Edge
+// runtime. Requests keep Vercel's geo header (x-vercel-ip-country), which the API stores with each sample.
 
 export const config = {
-  runtime: 'edge',
-  regions: ['iad1']
+  runtime: "nodejs",
+  regions: ["iad1"],
+  maxDuration: 60,
 };
 
-export default async function handler(request: Request) {
-  const url = new URL(request.url);
-  const path = url.pathname;
+type Handler = (req: Request, info?: { ip?: string }) => Promise<Response>;
 
-  if (path === '/api/vitals') {
-    if (request.method === 'POST') {
-      const body = await request.json();
-      // Store vitals in Vercel KV or database
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    if (request.method === 'GET') {
-      const urlParam = url.searchParams.get('url');
-      // Retrieve vitals from storage
-      return new Response(JSON.stringify({ vitals: [] }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-  }
-
-  if (path === '/api/stats') {
-    const urlParam = url.searchParams.get('url');
-    // Calculate and return stats
-    return new Response(JSON.stringify({ stats: {} }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  return new Response('Not Found', { status: 404 });
+/** Turns the API's Web-standard handler into a Vercel function (default export of api/index.ts). */
+export function vercelHandler(app: Handler): (request: Request) => Promise<Response> {
+  return (request: Request) => app(request, { ip: request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined });
 }
+
+export default vercelHandler;

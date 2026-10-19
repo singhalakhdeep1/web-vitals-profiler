@@ -1,29 +1,15 @@
-// Firefox extension background script
+// Firefox background setup: Firefox runs the same background module as an event page (background.scripts, see
+// scripts/build-targets.mjs) and shows the side panel as a sidebar (sidebar_action) instead of chrome.sidePanel.
+import type { PlatformAdapter } from "./platform";
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('Web Vitals Profiler installed');
-});
-
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  const tab = await chrome.tabs.get(activeInfo.tabId);
-  if (tab.url && tab.url.startsWith('http')) {
-    chrome.scripting.executeScript({
-      target: { tabId: activeInfo.tabId },
-      files: ['injected/index.js']
-    });
-  }
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'VITALS_COLLECTED') {
-    chrome.storage.local.set({
-      [request.url]: request.vitals
-    });
-  }
-  if (request.type === 'GET_VITALS') {
-    chrome.storage.local.get([request.url], (result) => {
-      sendResponse(result[request.url]);
-    });
-  }
-  return true;
-});
+export const firefoxAdapter: PlatformAdapter = {
+  name: "firefox",
+  hasSidePanel: false,
+  browserName(ua) {
+    const v = /Firefox\/(\d+)/.exec(ua);
+    return v ? `Firefox ${v[1]}` : "Firefox";
+  },
+  async setup() {
+    // nothing to configure: the sidebar is declared in the manifest and toggled by the user or the popup
+  },
+};

@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface BadgeConfig {
   id: string;
   name: string;
-  type: 'LCP' | 'FID' | 'CLS' | 'overall';
+  type: 'LCP' | 'INP' | 'CLS' | 'overall';
   style: 'minimal' | 'detailed' | 'score';
   position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   enabled: boolean;
+  /** Served by the API as SVG for embedding. */
+  imageUrl?: string;
+  /** Ready-to-paste HTML that pins the badge in the chosen corner of a page. */
+  embedHtml?: string;
 }
 
 interface BadgeData {
@@ -42,7 +47,7 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
 
   const fetchConfigs = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/badge-configs`);
+      const response = await apiFetch(`/api/users/${userId}/badge-configs`);
       if (response.ok) {
         const data = await response.json();
         setConfigs(data);
@@ -56,7 +61,7 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
 
   const fetchBadgeData = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/badge-data`);
+      const response = await apiFetch(`/api/users/${userId}/badge-data`);
       if (response.ok) {
         const data = await response.json();
         setBadgeData(data);
@@ -68,7 +73,7 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
 
   const createConfig = async () => {
     try {
-      const response = await fetch('/api/badge-configs', {
+      const response = await apiFetch('/api/badge-configs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, ...newConfig }),
@@ -92,7 +97,7 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
 
   const toggleBadge = async (id: string) => {
     try {
-      const response = await fetch(`/api/badge-configs/${id}/toggle`, {
+      const response = await apiFetch(`/api/badge-configs/${id}/toggle`, {
         method: 'POST',
       });
 
@@ -118,38 +123,19 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
   const getMetricLabel = (metric: string) => {
     const labels: Record<string, string> = {
       LCP: 'Largest Contentful Paint',
-      FID: 'First Input Delay',
+      INP: 'Interaction to Next Paint',
       CLS: 'Cumulative Layout Shift',
       overall: 'Overall Score',
     };
     return labels[metric] || metric;
   };
 
-  const getBadgePreview = (config: BadgeConfig, data: BadgeData) => {
-    const metricData = badgeData.find(d => d.metric === config.type) || badgeData[0];
-    
-    if (config.style === 'minimal') {
-      return (
-        <div className={`w-12 h-12 rounded-full ${getStatusColor(metricData.status)} flex items-center justify-center text-white font-bold`}>
-          {Math.round(metricData.value)}
-        </div>
-      );
+  /** The badge exactly as the server renders it for websites (disabled badges are not served). */
+  const getBadgePreview = (config: BadgeConfig) => {
+    if (!config.enabled || !config.imageUrl) {
+      return <div className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600">disabled</div>;
     }
-    
-    if (config.style === 'score') {
-      return (
-        <div className="bg-gray-800 text-white px-3 py-1 rounded-full text-sm">
-          {Math.round(metricData.value)}/100
-        </div>
-      );
-    }
-    
-    return (
-      <div className="bg-gray-800 text-white p-2 rounded text-xs">
-        <p className="font-medium">{getMetricLabel(config.type)}</p>
-        <p>{Math.round(metricData.value)}</p>
-      </div>
-    );
+    return <img src={`${config.imageUrl}?v=${badgeData.length}`} alt={`${config.name} badge`} className="h-5" data-testid="badge-image" />;
   };
 
   if (isLoading) return <div>Loading badge configurations...</div>;
@@ -186,12 +172,12 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
               <label className="block text-sm font-medium mb-1">Type</label>
               <select
                 value={newConfig.type}
-                onChange={(e) => setNewConfig({ ...newConfig, type: e.target.value as any })}
+                onChange={(e) => setNewConfig({ ...newConfig, type: e.target.value as BadgeConfig['type'] })}
                 className="w-full border rounded px-3 py-2"
               >
                 <option value="overall">Overall Score</option>
                 <option value="LCP">Largest Contentful Paint</option>
-                <option value="FID">First Input Delay</option>
+                <option value="INP">Interaction to Next Paint</option>
                 <option value="CLS">Cumulative Layout Shift</option>
               </select>
             </div>
@@ -199,7 +185,7 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
               <label className="block text-sm font-medium mb-1">Style</label>
               <select
                 value={newConfig.style}
-                onChange={(e) => setNewConfig({ ...newConfig, style: e.target.value as any })}
+                onChange={(e) => setNewConfig({ ...newConfig, style: e.target.value as BadgeConfig['style'] })}
                 className="w-full border rounded px-3 py-2"
               >
                 <option value="minimal">Minimal (Circle)</option>
@@ -211,7 +197,7 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
               <label className="block text-sm font-medium mb-1">Position</label>
               <select
                 value={newConfig.position}
-                onChange={(e) => setNewConfig({ ...newConfig, position: e.target.value as any })}
+                onChange={(e) => setNewConfig({ ...newConfig, position: e.target.value as BadgeConfig['position'] })}
                 className="w-full border rounded px-3 py-2"
               >
                 <option value="bottom-right">Bottom Right</option>
@@ -234,12 +220,15 @@ export function CoreWebVitalsBadges({ userId }: CoreWebVitalsBadgesProps) {
           {configs.map((config) => (
             <div key={config.id} className="flex items-center justify-between p-3 border rounded">
               <div className="flex items-center gap-4">
-                {getBadgePreview(config, badgeData[0])}
+                {getBadgePreview(config)}
                 <div>
                   <p className="font-medium">{config.name}</p>
                   <p className="text-sm text-gray-600 capitalize">
                     {config.type} • {config.style} • {config.position}
                   </p>
+                  {config.embedHtml && (
+                    <input readOnly className="mt-1 w-full rounded border px-1 py-0.5 font-mono text-[10px]" value={config.embedHtml} onFocus={(e) => e.currentTarget.select()} aria-label={`Embed code for ${config.name}`} />
+                  )}
                 </div>
               </div>
               <label className="flex items-center gap-2">

@@ -1,0 +1,17 @@
+{
+  "name": "@wvp/pagespeed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PageSpeed Insights (remote Lighthouse) client",
+  "exports": {
+    ".": "./api.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "typescript": "5.9.2"
+  }
+}

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface Budget {
   id: string;
   name: string;
-  metric: 'LCP' | 'FID' | 'CLS' | 'FCP' | 'TTFB' | 'TBT';
+  metric: 'LCP' | 'INP' | 'CLS' | 'FCP' | 'TTFB' | 'TBT';
   threshold: number;
   unit: 'ms' | 'score';
   status: 'passing' | 'failing' | 'warning';
@@ -32,7 +33,7 @@ export function PerformanceBudgets({ userId }: PerformanceBudgetsProps) {
 
   const fetchBudgets = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/performance-budgets`);
+      const response = await apiFetch(`/api/users/${userId}/performance-budgets`);
       if (response.ok) {
         const data = await response.json();
         setBudgets(data);
@@ -46,7 +47,7 @@ export function PerformanceBudgets({ userId }: PerformanceBudgetsProps) {
 
   const createBudget = async () => {
     try {
-      const response = await fetch('/api/performance-budgets', {
+      const response = await apiFetch('/api/performance-budgets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, ...newBudget }),
@@ -65,7 +66,7 @@ export function PerformanceBudgets({ userId }: PerformanceBudgetsProps) {
 
   const deleteBudget = async (id: string) => {
     try {
-      const response = await fetch(`/api/performance-budgets/${id}`, {
+      const response = await apiFetch(`/api/performance-budgets/${id}`, {
         method: 'DELETE',
       });
 
@@ -89,7 +90,7 @@ export function PerformanceBudgets({ userId }: PerformanceBudgetsProps) {
   const getMetricLabel = (metric: string) => {
     const labels: Record<string, string> = {
       LCP: 'Largest Contentful Paint',
-      FID: 'First Input Delay',
+      INP: 'Interaction to Next Paint',
       CLS: 'Cumulative Layout Shift',
       FCP: 'First Contentful Paint',
       TTFB: 'Time to First Byte',
@@ -136,7 +137,7 @@ export function PerformanceBudgets({ userId }: PerformanceBudgetsProps) {
                 className="w-full border rounded px-3 py-2"
               >
                 <option value="LCP">Largest Contentful Paint (LCP)</option>
-                <option value="FID">First Input Delay (FID)</option>
+                <option value="INP">Interaction to Next Paint (INP)</option>
                 <option value="CLS">Cumulative Layout Shift (CLS)</option>
                 <option value="FCP">First Contentful Paint (FCP)</option>
                 <option value="TTFB">Time to First Byte (TTFB)</option>

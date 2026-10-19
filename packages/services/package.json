@@ -1,0 +1,24 @@
+{
+  "name": "@wvp/services",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-side infrastructure services: Redis cache, token-bucket rate limiting, structured logging",
+  "exports": {
+    ".": "./index.ts",
+    "./cache": "./cache/cache.service.ts",
+    "./rate-limiting": "./rate-limiting/rate-limiting.service.ts",
+    "./structured-logging": "./structured-logging/structured-logging.service.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "typescript": "5.9.2"
+  }
+}

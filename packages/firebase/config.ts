@@ -1,70 +1,48 @@
-// Firebase configuration for web vitals profiler
+// Firebase configuration for web vitals profiler: the document store (Firestore or in-memory) and the vitals helpers
+// the design documents describe (save, query by URL, percentile statistics).
 
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAnalytics } from 'firebase/analytics';
+import { summarize } from "@wvp/wasm";
+import { FirestoreStore, firebaseConfigFromEnv } from "./src/firestore";
+import { MemoryStore, type DocStore } from "./src/store";
 
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID
-};
+export { FirestoreStore, firebaseConfigFromEnv, MemoryStore };
+export type { DocStore, Op, Query, Where } from "./src/store";
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const analytics = getAnalytics(app);
-
-export async function saveVitals(vitals: any) {
-  const vitalsRef = db.collection('vitals');
-  await vitalsRef.add({
-    ...vitals,
-    timestamp: new Date()
-  });
+/** Firestore when FIREBASE_PROJECT_ID / FIREBASE_SERVICE_ACCOUNT is set (or the emulator is), otherwise in-memory. */
+export function createStore(env: Record<string, string | undefined> = process.env): DocStore {
+  const config = firebaseConfigFromEnv(env);
+  return config ? new FirestoreStore(config) : new MemoryStore();
 }
 
-export async function getVitalsByUrl(url: string, limit = 100) {
-  const vitalsRef = db.collection('vitals');
-  const snapshot = await vitalsRef
-    .where('url', '==', url)
-    .orderBy('timestamp', 'desc')
-    .limit(limit)
-    .get();
-  
-  return snapshot.docs.map(doc => doc.data());
+/** One stored vitals sample (collection "vitals"). */
+export interface VitalsDoc {
+  id: string;
+  userId: string;
+  url: string;
+  origin: string;
+  name: "LCP" | "CLS" | "INP" | "FCP" | "TTFB" | "TBT";
+  value: number;
+  rating: "good" | "needs-improvement" | "poor";
+  timestamp: number;
+  navigationType?: string;
+  device?: "desktop" | "mobile" | "tablet";
+  browser?: string;
+  connection?: string;
+  country?: string;
 }
 
-export async function getVitalsStats(url: string) {
-  const vitals = await getVitalsByUrl(url, 1000);
-  
-  const lcpValues = vitals.map(v => v.lcp).filter(v => v != null);
-  const fidValues = vitals.map(v => v.fid).filter(v => v != null);
-  const clsValues = vitals.map(v => v.cls).filter(v => v != null);
-
-  return {
-    lcp: {
-      p50: percentile(lcpValues, 50),
-      p75: percentile(lcpValues, 75),
-      p95: percentile(lcpValues, 95)
-    },
-    fid: {
-      p50: percentile(fidValues, 50),
-      p75: percentile(fidValues, 75),
-      p95: percentile(fidValues, 95)
-    },
-    cls: {
-      p50: percentile(clsValues, 50),
-      p75: percentile(clsValues, 75),
-      p95: percentile(clsValues, 95)
-    }
-  };
+export async function saveVitals(store: DocStore, vitals: VitalsDoc[]): Promise<void> {
+  await store.setMany("vitals", vitals.map((v) => ({ id: v.id, doc: v })));
 }
 
-function percentile(values: number[], p: number): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[index];
+export async function getVitalsByUrl(store: DocStore, userId: string, url: string, limit = 1000): Promise<VitalsDoc[]> {
+  return store.query<VitalsDoc>("vitals", { where: [["userId", "==", userId], ["url", "==", url]], orderBy: ["timestamp", "desc"], limit });
+}
+
+/** p50 / p75 / p95 per metric for a URL (percentiles computed in WebAssembly). */
+export async function getVitalsStats(store: DocStore, userId: string, url: string): Promise<Record<string, ReturnType<typeof summarize>>> {
+  const vitals = await getVitalsByUrl(store, userId, url, 5000);
+  const byName = new Map<string, number[]>();
+  for (const v of vitals) (byName.get(v.name) ?? byName.set(v.name, []).get(v.name)!).push(v.value);
+  return Object.fromEntries([...byName].map(([name, values]) => [name, summarize(values)]));
 }

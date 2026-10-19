@@ -1,4 +1,7 @@
+import { ApiError, getSyncSettings, updateSyncSettings, uploadSamples, type UploadSample } from "@wvp/api-client";
+import { CriticalPathService, PerformanceAnalysisService } from "@wvp/core";
 import { createMessage, onMessage } from "@wvp/messaging";
+import { registerBackgroundSync, UploadQueue } from "@wvp/service-worker";
 import {
   clearAllData,
   detectRegressions,
@@ -13,10 +16,76 @@ import {
   updateSetting,
 } from "@wvp/storage";
 import { exportMetricsHtml, sendSlackNotification } from "@wvp/storage/reports";
-import type { TabInfo, VitalMetric, VitalName, VitalsSnapshot } from "@wvp/types";
+import type { PageResources, SyncStatus, TabInfo, VitalMetric, VitalsSnapshot } from "@wvp/types";
 import { generateId, logger } from "@wvp/utils";
+import { detectPlatform, deviceClass } from "./platform";
 
-logger.info("Background service worker initialized");
+const platform = detectPlatform();
+logger.info("Background service worker initialized", { platform: platform.name });
+
+/* ---- cloud sync: measured vitals are queued and uploaded to the user's sync server ---- */
+
+const uploads = new UploadQueue<UploadSample & { connection?: string }>({
+  storageKey: "wvp:upload-queue",
+  batchSize: 200,
+  send: async (batch) => {
+    // one request per connection type, so the server can segment by network
+    const groups = new Map<string, UploadSample[]>();
+    for (const { connection, ...s } of batch) (groups.get(connection ?? "") ?? groups.set(connection ?? "", []).get(connection ?? "")!).push(s);
+    for (const [connection, samples] of groups) {
+      await uploadSamples(samples, { device: deviceClass(), browser: platform.browserName(navigator.userAgent), connection: connection || undefined });
+    }
+    await updateSyncSettings({ lastSyncAt: Date.now(), lastError: undefined });
+  },
+  // signed out or the account is gone: retrying is pointless until the user signs in again
+  isPermanent: (e) => e instanceof ApiError && (e.status === 401 || e.code === "unauthenticated"),
+});
+
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleFlush(): void {
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => void flushUploads(false), 5_000);
+}
+
+async function flushUploads(force: boolean): Promise<void> {
+  const settings = await getSyncSettings();
+  if (!settings.enabled || !settings.token) return;
+  try {
+    await uploads.flush(force);
+  } catch (e) {
+    await updateSyncSettings({ lastError: (e as Error).message });
+  }
+}
+
+async function queueForSync(metric: VitalMetric): Promise<void> {
+  const settings = await getSyncSettings();
+  if (!settings.enabled || !settings.token || !/^https?:/.test(metric.url)) return;
+  await uploads.enqueue([{ id: metric.id, name: metric.name, value: metric.value, url: metric.url, timestamp: metric.timestamp, navigationType: metric.navigationType, connection: metric.connection }]);
+  scheduleFlush();
+}
+
+// retries queued uploads every minute (also after the browser was offline or the worker was stopped)
+registerBackgroundSync("wvp-sync", 1, () => flushUploads(false));
+
+/* ---- the measuring script in every page's own JavaScript world ---- */
+
+const MAIN_WORLD_SCRIPT = { id: "wvp-main-world", js: ["injected/injected-script.js"], matches: ["http://*/*", "https://*/*"], runAt: "document_start" as const, world: "MAIN" as const };
+
+async function registerMainWorldScript(): Promise<void> {
+  try {
+    const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [MAIN_WORLD_SCRIPT.id] });
+    if (!existing.length) await chrome.scripting.registerContentScripts([MAIN_WORLD_SCRIPT]);
+  } catch (error) {
+    logger.error("Could not register the page measuring script", error);
+  }
+}
+void registerMainWorldScript();
+
+/* ---- speed analysis of the page's resources ---- */
+
+const resourcesByTab = new Map<number, PageResources>();
+const resourceAnalysis = new PerformanceAnalysisService();
+const criticalPath = new CriticalPathService();
 
 const vitalsByTab = new Map<number, VitalsSnapshot>();
 const timeline: VitalMetric[] = [];
@@ -61,9 +130,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   logger.info(`Extension ${details.reason}`, { version: manifest.version });
 
-  if (chrome.sidePanel?.setPanelBehavior) {
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
-  }
+  await platform.setup();
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -120,6 +187,7 @@ onMessage({
     const snapshot = updateSnapshot(tabId, enriched);
 
     void saveMetric(enriched).catch((err) => logger.error("Failed to save metric", err));
+    void queueForSync(enriched).catch((err) => logger.error("Failed to queue metric for sync", err));
     broadcastToStreams(snapshot, enriched);
 
     chrome.tabs.sendMessage(tabId, createMessage("VITALS_UPDATE", snapshot)).catch(() => {});
@@ -195,7 +263,37 @@ onMessage({
 
   CLEAR_DATA: async () => {
     await clearAllData();
+    await uploads.clear();
     return { success: true };
+  },
+
+  SYNC_STATUS: async () => {
+    const s = await getSyncSettings();
+    const status: SyncStatus = { enabled: s.enabled, signedIn: Boolean(s.token), user: s.user, apiUrl: s.apiUrl, queued: await uploads.size(), lastSyncAt: s.lastSyncAt, lastError: s.lastError ?? (await uploads.state()).lastError };
+    return { success: true, data: status };
+  },
+
+  SYNC_NOW: async () => {
+    await flushUploads(true);
+    const s = await getSyncSettings();
+    return { success: !s.lastError, data: { queued: await uploads.size(), lastSyncAt: s.lastSyncAt }, error: s.lastError };
+  },
+
+  PAGE_RESOURCES: (message, sender) => {
+    const tabId = sender.tab?.id;
+    if (tabId) resourcesByTab.set(tabId, message.payload as PageResources);
+    return { success: true };
+  },
+
+  GET_PAGE_ANALYSIS: (message) => {
+    const tabId = (message.payload as { tabId?: number } | undefined)?.tabId ?? message.tabId;
+    const page = tabId ? resourcesByTab.get(tabId) : undefined;
+    if (!page) return { success: true, data: null };
+    const origin = new URL(page.url).origin;
+    return {
+      success: true,
+      data: { url: page.url, collectedAt: page.collectedAt, resources: resourceAnalysis.analyzeResources(page.resources, origin), criticalPath: criticalPath.analyzeCriticalPath(page.navigation, page.resources) },
+    };
   },
 });
 
@@ -217,6 +315,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  resourcesByTab.delete(tabId);
   const snapshot = vitalsByTab.get(tabId);
   if (snapshot && Object.keys(snapshot.metrics).length > 0) {
     void saveSession({

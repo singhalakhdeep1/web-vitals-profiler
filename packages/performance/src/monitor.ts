@@ -1,6 +1,6 @@
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from "web-vitals";
 import type { VitalMetric } from "@wvp/types";
-import { createVitalMetric, fromWebVitalMetric, initTBTObserver } from "./index";
+import { fromWebVitalMetric, initTBTObserver } from "./index";
 
 /** Initializes all Core Web Vitals collectors in page context. */
 export function initWebVitalsMonitoring(
@@ -12,11 +12,13 @@ export function initWebVitalsMonitoring(
     if (vital) onMetric(vital);
   };
 
-  onCLS(handleMetric);
-  onFCP(handleMetric);
-  onINP(handleMetric);
-  onLCP(handleMetric);
-  onTTFB(handleMetric);
+  // every change is reported, so the live views update while the page is in use (the final value has the same id)
+  const live = { reportAllChanges: true };
+  onCLS(handleMetric, live);
+  onFCP(handleMetric, live);
+  onINP(handleMetric, live);
+  onLCP(handleMetric, live);
+  onTTFB(handleMetric, live);
 
   const cleanupTBT = initTBTObserver(onMetric, url);
 

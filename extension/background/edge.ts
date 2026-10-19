@@ -1,29 +1,17 @@
-// Edge extension background script (service worker)
+// Chromium (Chrome and Microsoft Edge) background setup: Manifest V3 service worker with the side panel API.
+import type { PlatformAdapter } from "./platform";
 
-self.addEventListener('install', (event) => {
-  console.log('Web Vitals Profiler installed');
-});
-
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  const tab = await chrome.tabs.get(activeInfo.tabId);
-  if (tab.url && tab.url.startsWith('http')) {
-    chrome.scripting.executeScript({
-      target: { tabId: activeInfo.tabId },
-      files: ['injected/index.js']
-    });
-  }
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'VITALS_COLLECTED') {
-    chrome.storage.local.set({
-      [request.url]: request.vitals
-    });
-  }
-  if (request.type === 'GET_VITALS') {
-    chrome.storage.local.get([request.url], (result) => {
-      sendResponse(result[request.url]);
-    });
-  }
-  return true;
-});
+export const edgeAdapter: PlatformAdapter = {
+  name: "chromium",
+  hasSidePanel: true,
+  browserName(ua) {
+    const edge = /Edg\/(\d+)/.exec(ua);
+    if (edge) return `Edge ${edge[1]}`;
+    const chrome = /Chrome\/(\d+)/.exec(ua);
+    return chrome ? `Chrome ${chrome[1]}` : "Chromium";
+  },
+  async setup() {
+    // the toolbar button opens the popup; the side panel is opened from the popup or the browser's side panel menu
+    if (chrome.sidePanel?.setPanelBehavior) await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  },
+};

@@ -7,14 +7,6 @@ logger.info("Content script loaded", { url: window.location.href });
 
 const OVERLAY_ID = "wvp-overlay";
 
-function injectPageScript(): void {
-  const script = document.createElement("script");
-  script.src = chrome.runtime.getURL("injected/injected-script.js");
-  script.type = "module";
-  (document.head || document.documentElement).appendChild(script);
-  script.onload = () => script.remove();
-}
-
 function createOverlay(): HTMLElement {
   let overlay = document.getElementById(OVERLAY_ID);
   if (overlay) return overlay;
@@ -61,11 +53,18 @@ function setOverlayVisible(visible: boolean): void {
   overlay.style.display = visible ? "block" : "none";
 }
 
-injectPageScript();
+// The page-world measuring script (extension/injected) is declared in the manifest with world: "MAIN".
+// This script runs at document_start, so the overlay waits for the body.
+function whenBodyReady(fn: () => void): void {
+  if (document.body) fn();
+  else document.addEventListener("DOMContentLoaded", fn, { once: true });
+}
 
-void chrome.storage.local.get("wvp:state").then((result) => {
-  const state = result["wvp:state"] as { overlayEnabled?: boolean } | undefined;
-  setOverlayVisible(state?.overlayEnabled !== false);
+whenBodyReady(() => {
+  void chrome.storage.local.get("wvp:state").then((result) => {
+    const state = result["wvp:state"] as { overlayEnabled?: boolean } | undefined;
+    setOverlayVisible(state?.overlayEnabled !== false);
+  });
 });
 
 onMessage({
@@ -91,6 +90,9 @@ window.addEventListener("message", (event) => {
 
   if (event.data.type === "VITALS_UPDATE") {
     void chrome.runtime.sendMessage(createMessage("VITALS_UPDATE", event.data.payload));
+  }
+  if (event.data.type === "PAGE_RESOURCES") {
+    void chrome.runtime.sendMessage(createMessage("PAGE_RESOURCES", event.data.payload)).catch(() => {});
   }
 });
 

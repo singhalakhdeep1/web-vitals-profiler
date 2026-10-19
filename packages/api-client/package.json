@@ -1,0 +1,18 @@
+{
+  "name": "@wvp/api-client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sync API client for extension pages and the background worker",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/chrome": "^0.0.313",
+    "typescript": "5.9.2"
+  }
+}

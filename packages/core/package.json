@@ -1,0 +1,21 @@
+{
+  "name": "@wvp/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Analysis shared by the API and the extension: thresholds, scoring, regressions, A/B statistics, analytics, reports",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wvp/wasm": "workspace:*"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "typescript": "5.9.2"
+  }
+}

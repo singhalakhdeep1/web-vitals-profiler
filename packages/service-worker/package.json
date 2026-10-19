@@ -1,0 +1,18 @@
+{
+  "name": "@wvp/service-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Background sync for the extension's service worker: persistent upload queue with back-off and alarms",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/chrome": "^0.0.313",
+    "typescript": "5.9.2"
+  }
+}

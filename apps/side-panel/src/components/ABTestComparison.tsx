@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch } from '@wvp/api-client';
 
 interface ABTest {
   id: string;
@@ -53,7 +54,7 @@ export function ABTestComparison({ userId }: ABTestComparisonProps) {
 
   const fetchTests = async () => {
     try {
-      const response = await fetch(`/api/users/${userId}/ab-tests`);
+      const response = await apiFetch(`/api/users/${userId}/ab-tests`);
       if (response.ok) {
         const data = await response.json();
         setTests(data);
@@ -71,7 +72,7 @@ export function ABTestComparison({ userId }: ABTestComparisonProps) {
 
   const fetchComparison = async (testId: string) => {
     try {
-      const response = await fetch(`/api/ab-tests/${testId}/comparison`);
+      const response = await apiFetch(`/api/ab-tests/${testId}/comparison`);
       if (response.ok) {
         const data = await response.json();
         setComparison(data);
@@ -81,9 +82,23 @@ export function ABTestComparison({ userId }: ABTestComparisonProps) {
     }
   };
 
+  const setStatus = async (status: ABTest['status']) => {
+    if (!selectedTest) return;
+    const response = await apiFetch(`/api/ab-tests/${selectedTest.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (response.ok) {
+      const updated = await response.json();
+      setTests(prev => prev.map(t => (t.id === updated.id ? updated : t)));
+      setSelectedTest(updated);
+    }
+  };
+
   const createTest = async () => {
     try {
-      const response = await fetch('/api/ab-tests', {
+      const response = await apiFetch('/api/ab-tests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -259,8 +274,14 @@ export function ABTestComparison({ userId }: ABTestComparisonProps) {
               <p className="text-sm text-gray-600">{selectedTest.description}</p>
             </div>
             <div className="flex gap-2">
-              <button className="px-3 py-1 border rounded text-sm">Pause</button>
-              <button className="px-3 py-1 border rounded text-sm">End Test</button>
+              {selectedTest.status !== 'completed' && (
+                <button onClick={() => void setStatus(selectedTest.status === 'paused' ? 'running' : 'paused')} className="px-3 py-1 border rounded text-sm">
+                  {selectedTest.status === 'paused' ? 'Resume' : 'Pause'}
+                </button>
+              )}
+              {selectedTest.status !== 'completed' && (
+                <button onClick={() => void setStatus('completed')} className="px-3 py-1 border rounded text-sm">End Test</button>
+              )}
             </div>
           </div>
 
